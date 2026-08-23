@@ -169,7 +169,10 @@ APP="$APP" python3 - <<'PY'
 import os, pathlib
 
 app = os.environ["APP"]
-skip_dirs = {".git", "node_modules", "dist", ".venv", "__pycache__", "playwright-report", "test-results"}
+skip_dirs = {".git", "node_modules", "dist", ".venv", "__pycache__", "playwright-report", "test-results",
+             # local/ is the developer's own gitignored notes about real
+             # infrastructure -- not template content, and not ours to rewrite.
+             "local"}
 # init-project.sh excludes ITSELF for a reason that is not cosmetic: bash reads
 # a script incrementally, by byte offset, as it executes. Rewriting this file
 # mid-run shifts every later byte and bash resumes in the middle of a different

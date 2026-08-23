@@ -98,6 +98,29 @@ container cannot reach the backend at all. Record here any status code that is
 basic_auth gate — so a future session does not read a correct response as an
 outage.
 
+## Your own infrastructure — `local/`
+
+The docs in this repo are generic on purpose (`example.com`, `<pi-lan-ip>`,
+`<your-org>`) because **this repository is public**. The real hostnames, LAN
+address, SSH aliases, server paths and app inventory live in **`local/`**, which
+is gitignored.
+
+**Read `local/infrastructure.md` before answering anything about where this
+deploys** — the domain and addresses in the tracked docs are placeholders, and
+acting on them will point at somebody else's example.com. `local/deployments.md`
+records what is actually live.
+
+`local/` is gitignored, so like `.env` it does **not exist in a fresh worktree**.
+Symlink it when a session needs it:
+
+```bash
+ln -s ../../../local local
+```
+
+Never move a file out of `local/` to make it visible, and never `git add -f` it.
+CI fails the build if anything under `local/` is tracked. The tracked template is
+`local.example/`.
+
 ## Secrets
 
 `.env` is gitignored; `.env.example` is the tracked template and must list every

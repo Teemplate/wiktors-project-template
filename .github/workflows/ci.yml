@@ -188,3 +188,54 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
             detect --source=/repo --no-git --redact --verbose
+
+      # local/ holds real hostnames, LAN addresses and server paths. It is
+      # gitignored, but a gitignore only helps until someone runs `git add -f`
+      # or rewrites .gitignore. THIS REPOSITORY IS PUBLIC, so the cost of that
+      # mistake is publishing a private network layout -- worth a hard gate
+      # rather than trusting the ignore file alone.
+      - name: No local/ files tracked
+        run: |
+          tracked="$(git ls-files -- local/ || true)"
+          if [ -n "$tracked" ]; then
+            echo "::error::Files under local/ are tracked. That directory is" \
+                 "gitignored on purpose and this repository is public."
+            echo "$tracked" | sed 's/^/  /'
+            echo
+            echo "Untrack them, keeping the files on disk:"
+            echo "  git rm -r --cached local/ && git commit -m 'chore: untrack local/'"
+            echo "If any real value was already pushed, treat it as disclosed:"
+            echo "rotate what can be rotated and rewrite the history."
+            exit 1
+          fi
+          echo "nothing under local/ is tracked"
+
+      # The ignore rule itself. `local` is written WITHOUT a trailing slash on
+      # purpose: `local/` matches only a real directory, so a SYMLINK named
+      # local -- which is exactly what DEVELOPING.md tells you to create in a
+      # worktree -- would show up as untracked and go in with `git add -A`.
+      # This step fails on that regression instead of letting it publish a
+      # private network layout months later.
+      - name: local/ is actually ignored
+        run: |
+          fail=0
+
+          # 1. a real directory, with something nested inside it
+          mkdir -p local/nested && echo canary > local/nested/canary.md
+          if [ -n "$(git status --porcelain -- local)" ]; then
+            echo "::error::local/ is not ignored as a directory."
+            git status --porcelain -- local; fail=1
+          fi
+          rm -rf local
+
+          # 2. local as a SYMLINK -- the case a trailing slash misses
+          mkdir -p "$RUNNER_TEMP/local-canary" && ln -s "$RUNNER_TEMP/local-canary" local
+          if [ -n "$(git status --porcelain -- local)" ]; then
+            echo "::error::a symlink named local is NOT ignored. The .gitignore" \
+                 "rule must be 'local', with no trailing slash."
+            git status --porcelain -- local; fail=1
+          fi
+          rm -f local
+
+          [ "$fail" = 0 ] || exit 1
+          echo "local/ is ignored as both a directory and a symlink"

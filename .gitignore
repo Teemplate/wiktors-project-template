@@ -5,6 +5,15 @@
 .env.*
 !.env.example
 
+# Your own infrastructure: real hostnames, LAN addresses, SSH aliases, server
+# paths, the app inventory. THIS REPOSITORY IS PUBLIC — nothing in here may be
+# committed. local.example/ is the tracked template; see local.example/README.md.
+#
+# No trailing slash and no negation patterns, deliberately: a slash misses a
+# symlink, and one wrong `!` line silently publishes your network layout.
+# CI fails the build if anything under local/ is ever tracked.
+local
+
 # Python
 __pycache__/
 *.py[cod]
