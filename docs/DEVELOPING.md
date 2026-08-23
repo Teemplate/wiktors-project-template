@@ -31,11 +31,21 @@ What a worktree does and does not isolate:
   means `git stash` is repo-wide: **never** use bare `git stash`/`git stash pop`,
   because another session may pop your entry. Use a WIP commit instead.
 - **Absent: everything gitignored.** A fresh worktree has no `.env`, no
-  `backend/.venv`, no `frontend/node_modules`, no `dist/`. Three consequences:
+  `backend/.venv`, no `frontend/node_modules`, no `dist/`, and no `local/`.
+  Four consequences:
   1. **Symlink what the checks need**, or run them in the primary checkout.
   2. **Never deploy from a worktree** (see §5).
   3. Merging into `develop` has to happen where `develop` is checked out —
      normally the primary checkout. `ExitWorktree` first.
+  4. `local/` holds the real hostnames and server paths, so a session in a
+     worktree is working from placeholders until you symlink it:
+     `ln -s ../../../local local`.
+
+  > When you symlink these, note that the ignore rules for them are written
+  > **without a trailing slash** (`local`, `node_modules`, `dist`). `foo/`
+  > matches only a real directory — a *symlink* named `foo` stays untracked but
+  > visible, and `git add -A` commits a link pointing into your home directory.
+  > CI has a step that fails if that regression is reintroduced for `local`.
 
 ## 2. Branch roles
 

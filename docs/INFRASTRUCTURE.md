@@ -498,6 +498,20 @@ That path is what `deploy/install-agent.sh` expects.
 
 ---
 
+## Write your own values down
+
+Everything above is written with placeholders, because this repository is
+public. Once your server is real, record the actual values somewhere they will
+survive — but **not in git**:
+
+```bash
+cp -r local.example local        # local/ is gitignored
+```
+
+Fill in `local/infrastructure.md` as you go. The next person to ask "what was
+the tunnel called again?" is you, in six months. See
+[`local.example/README.md`](../local.example/README.md).
+
 ## Done — what you have now
 
 - [ ] `uname -m` on the Pi prints `aarch64`

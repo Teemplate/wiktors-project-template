@@ -46,6 +46,7 @@ what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 | `scripts/check_migration_safety.py` | Fails a PR that drops a table or column in `upgrade()` |
 | `.claude/hooks/session-start.sh` | Re-roots auto-created agent branches from `main` onto `develop` |
 | `.env.example` | Every variable, with safe local defaults |
+| `local.example/` | Template for `local/` — your own hostnames, paths and app inventory, gitignored |
 | `CLAUDE.md` | What an agent session must read before writing code |
 | `docs/DEVELOPING.md` | Gitflow + worktrees, the checks, schema changes, and the gotchas |
 | `docs/INFRASTRUCTURE.md` | **Start here if you have no server yet** — Pi, Cloudflare Tunnel, shared Caddy, SSH, signing keys |
