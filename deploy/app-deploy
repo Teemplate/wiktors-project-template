@@ -1,0 +1,270 @@
+#!/usr/bin/env bash
+#
+# app-deploy — pull-based deploy agent.  (CHANGEME: rename to <app>-deploy)
+#
+# Runs ON THE PI as a systemd *user* timer. Nothing on the internet can start a
+# deploy: this polls GitHub outbound with a read-only deploy key scoped to one
+# repository. No credential exists anywhere -- not in GitHub, not in Cloudflare
+# -- that can reach the Pi or trigger this script. That is the whole reason to
+# prefer it over a self-hosted runner or an SSH-based deploy.
+#
+#   app-deploy staging [--force]
+#   app-deploy prod    [--force]
+#
+# Exit codes: 0 nothing to do or deployed cleanly, 1 deploy failed (and was
+# rolled back), 2 misconfiguration.
+#
+# The canonical copy lives in the repo at deploy/app-deploy. The Pi runs an
+# INSTALLED copy at ~/.local/bin (see deploy/install-agent.sh), so a merge
+# cannot change the agent that is about to deploy it.
+
+set -euo pipefail
+
+# ------------------------------------------------------------------ CHANGEME --
+APP="CHANGEME-app"                     # compose project + container prefix
+DOMAIN="CHANGEME-app.example.com"      # public hostname (production)
+STAGING_DOMAIN="CHANGEME-app-staging.example.com"
+# A real data route -- NOT just /api/health. Health answers ok while every data
+# route is broken; checking only health is how a deploy goes green with a dead
+# database behind it.
+DATA_ROUTE="/api/items"
+# ------------------------------------------------------------------------------
+
+ENV_NAME="${1:-}"
+FORCE="${2:-}"
+
+case "$ENV_NAME" in
+  staging)
+    TRACK_REF="refs/remotes/origin/develop"
+    REQUIRE_SIGNED_TAG=0
+    COMPOSE_FILE="compose.staging.yml"
+    PROJECT="${APP}-staging"
+    PUBLIC_URL="https://${STAGING_DOMAIN}"
+    ;;
+  prod)
+    TRACK_REF=""                       # newest v* tag reachable from origin/main
+    # Set to 0 only if you consciously accept unsigned deploys. With it on, an
+    # unsigned tag is REFUSED and production simply stays where it is -- which
+    # is the behaviour that has already caught a real mistake in production.
+    REQUIRE_SIGNED_TAG=1
+    COMPOSE_FILE="compose.deploy.yml"
+    PROJECT="${APP}"
+    PUBLIC_URL="https://${DOMAIN}"
+    ;;
+  *)
+    echo "usage: app-deploy <staging|prod> [--force]" >&2
+    exit 2
+    ;;
+esac
+
+BASE="/mnt/ssd/apps/${PROJECT}"
+SRC="${BASE}/src"
+ENV_FILE="${BASE}/env/app.env"
+ENV_LINK=".env"
+STATE_DIR="${BASE}/state"
+BACKUP_DIR="${BASE}/backups"
+LOCK="${STATE_DIR}/deploy.lock"
+DEPLOYED_FILE="${STATE_DIR}/deployed.sha"
+LOG="${STATE_DIR}/deploy.log"
+NOTIFY_CONF="${BASE}/env/notify.conf"
+
+BACKEND_C="${PROJECT}-backend"
+FRONTEND_C="${PROJECT}-frontend"
+DB_C="${PROJECT}-db"
+BACKEND_IMG="${PROJECT}-backend:latest"
+FRONTEND_IMG="${PROJECT}-frontend:latest"
+
+# A browser UA because Cloudflare Bot Fight Mode makes plain curl unreliable.
+UA="Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+mkdir -p "$STATE_DIR" "$BACKUP_DIR"
+
+log() { printf '%s  %s\n' "$(date -Is)" "$*" | tee -a "$LOG" >&2; }
+
+# Only fires on something worth waking a human for. Quiet runs stay quiet: this
+# executes every 60s and almost always has nothing to say.
+notify() {
+  local level="$1" msg="$2"
+  log "[$level] $msg"
+  # shellcheck disable=SC1090
+  [ -r "$NOTIFY_CONF" ] && . "$NOTIFY_CONF"
+  if [ -n "${NTFY_TOPIC:-}" ]; then
+    curl -fsS -m 10 -H "Title: ${APP}-deploy ${ENV_NAME}" \
+         -H "Priority: $([ "$level" = ERROR ] && echo high || echo default)" \
+         -d "$msg" "https://ntfy.sh/${NTFY_TOPIC}" >/dev/null 2>&1 || true
+  fi
+}
+
+die() { notify ERROR "$*"; exit 1; }
+
+compose() { docker compose -f "$COMPOSE_FILE" -p "$PROJECT" --env-file "$ENV_LINK" "$@"; }
+
+# ---------------------------------------------------------------- preflight --
+
+[ -d "$SRC/.git" ] || { echo "no checkout at $SRC" >&2; exit 2; }
+[ -r "$ENV_FILE" ] || { echo "no env file at $ENV_FILE" >&2; exit 2; }
+cd "$SRC"
+[ -f "$COMPOSE_FILE" ] || { echo "$COMPOSE_FILE not in the checkout — $ENV_NAME is not set up yet" >&2; exit 2; }
+# compose resolves env_file relative to the checkout; the symlink keeps the real
+# secrets outside it, in a directory git never touches.
+[ -e "$ENV_LINK" ] || ln -sfn "../env/app.env" "$ENV_LINK"
+
+# One deploy at a time, and never two environments building at once on a 4-core
+# Pi that is also serving the site.
+exec 9>"$LOCK"
+flock -n 9 || { echo "another deploy holds the lock; skipping this tick" >&2; exit 0; }
+
+git fetch --quiet --prune --tags origin
+
+# ------------------------------------------------------------ resolve target --
+
+if [ "$ENV_NAME" = "prod" ]; then
+  TARGET_TAG=$(git tag --list 'v*' --sort=-v:refname --merged origin/main | head -1)
+  [ -n "$TARGET_TAG" ] || { echo "no v* tag on origin/main yet" >&2; exit 0; }
+  if [ "$REQUIRE_SIGNED_TAG" = "1" ]; then
+    git verify-tag "$TARGET_TAG" >/dev/null 2>&1 \
+      || die "refusing to deploy $TARGET_TAG: signature missing or not from an allowed signer"
+  fi
+  TARGET_SHA=$(git rev-parse "${TARGET_TAG}^{commit}")
+  TARGET_DESC="$TARGET_TAG"
+else
+  TARGET_SHA=$(git rev-parse "$TRACK_REF")
+  TARGET_DESC="develop@${TARGET_SHA:0:8}"
+fi
+
+DEPLOYED_SHA=$(cat "$DEPLOYED_FILE" 2>/dev/null || echo "none")
+
+if [ "$TARGET_SHA" = "$DEPLOYED_SHA" ] && [ "$FORCE" != "--force" ]; then
+  exit 0                                   # the common case; say nothing
+fi
+
+log "deploying $TARGET_DESC (was ${DEPLOYED_SHA:0:8})"
+
+avail_gb=$(df -BG --output=avail "$BASE" | tail -1 | tr -dc '0-9')
+[ "${avail_gb:-0}" -ge 5 ] || die "only ${avail_gb}G free on $BASE; refusing to build"
+
+# ------------------------------------------------------------ rollback point --
+# MUST happen before the build. `compose build` overwrites the :latest tag, so
+# capturing the "previous" image afterwards captures the NEW one and rollback
+# becomes a silent no-op that leaves the broken version live. An explicit
+# :rollback tag also stops the old image being reaped as dangling.
+
+HAVE_ROLLBACK=0
+for pair in "$BACKEND_IMG ${PROJECT}-backend:rollback" "$FRONTEND_IMG ${PROJECT}-frontend:rollback"; do
+  # shellcheck disable=SC2086
+  set -- $pair
+  if docker image inspect "$1" >/dev/null 2>&1; then
+    docker tag "$1" "$2"
+    HAVE_ROLLBACK=1
+  fi
+done
+
+# --------------------------------------------------------------------- build --
+# Next, because a build failure must cost nothing: no containers touched, no
+# backup taken, old version still serving.
+
+git reset --quiet --hard "$TARGET_SHA"
+if ! compose build >>"$LOG" 2>&1; then
+  [ "$DEPLOYED_SHA" != "none" ] && git reset --quiet --hard "$DEPLOYED_SHA" 2>/dev/null || true
+  die "build failed for $TARGET_DESC — nothing was changed. See $LOG"
+fi
+
+# -------------------------------------------------------------------- backup --
+
+PGUSER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
+PGDB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
+DUMP="${BACKUP_DIR}/predeploy-$(date +%Y%m%d-%H%M%S).dump"
+
+if docker ps --format '{{.Names}}' | grep -qx "$DB_C"; then
+  docker exec "$DB_C" pg_dump -U "$PGUSER" -d "$PGDB" -Fc > "$DUMP" 2>>"$LOG" \
+    || die "pg_dump failed — refusing to run migrations without a backup"
+  [ "$(stat -c%s "$DUMP")" -gt 1000 ] \
+    || die "pg_dump produced a suspiciously small file ($DUMP) — refusing to continue"
+  log "backup $DUMP ($(stat -c%s "$DUMP") bytes)"
+  # Keep the newest 20.
+  ls -1t "${BACKUP_DIR}"/predeploy-*.dump 2>/dev/null | tail -n +21 | xargs -r rm --
+else
+  log "no database container running yet; skipping pre-deploy backup"
+fi
+
+# ------------------------------------------------------------------ rollback --
+
+rollback() {
+  notify ERROR "$1 — rolling back to ${DEPLOYED_SHA:0:8}"
+  if [ "$HAVE_ROLLBACK" = "1" ]; then
+    docker tag "${PROJECT}-backend:rollback"  "$BACKEND_IMG"
+    docker tag "${PROJECT}-frontend:rollback" "$FRONTEND_IMG"
+  else
+    notify ERROR "no previous image to roll back to — this was the first deploy"
+  fi
+  if [ "$DEPLOYED_SHA" != "none" ]; then
+    git reset --quiet --hard "$DEPLOYED_SHA" || true
+  fi
+  compose up -d --no-build --force-recreate >>"$LOG" 2>&1 || true
+  # Never report a rollback that has not been confirmed. A rollback that
+  # silently does nothing is worse than no rollback: it leaves broken code live
+  # under a green log line.
+  if docker exec "$BACKEND_C" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000${DATA_ROUTE}').status==200 else 1)" >/dev/null 2>&1; then
+    notify ERROR "rollback verified: ${DATA_ROUTE} is serving again"
+  else
+    notify ERROR "ROLLBACK DID NOT RESTORE A WORKING SITE — needs a human now"
+  fi
+  # Deliberately NOT restoring the database. If a migration applied and the
+  # deploy then failed, a pg_restore racing live traffic is worse than a human
+  # looking at $DUMP. That call is not the agent's to make.
+  notify ERROR "rolled back. Containers are on the previous images; the SCHEMA WAS NOT reverted. Backup: ${DUMP:-none}"
+  exit 1
+}
+
+# ---------------------------------------------------------------- start them --
+# compose runs `migrate` to completion before it recreates the app services, so
+# a bad revision aborts here with the old containers still up.
+
+if ! compose up -d --no-build >>"$LOG" 2>&1; then
+  rollback "migrations or startup failed for $TARGET_DESC"
+fi
+
+# -------------------------------------------------------------- health checks --
+# Container-local, because that is the only layer that tells the truth about the
+# app. /api/health does NOT touch the database, so a real data route is checked
+# too.
+
+check() {
+  local desc="$1"; shift
+  for _ in $(seq 1 30); do
+    if "$@" >/dev/null 2>&1; then log "health ok: $desc"; return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
+py_get() {
+  docker exec "$1" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000$2').status==200 else 1)"
+}
+
+check "backend /api/health"   py_get "$BACKEND_C" "/api/health" \
+  || rollback "backend /api/health never came up"
+check "backend ${DATA_ROUTE}" py_get "$BACKEND_C" "$DATA_ROUTE" \
+  || rollback "backend ${DATA_ROUTE} failed — the database path is broken"
+check "frontend /"            docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://localhost:5173/ \
+  || rollback "frontend never rendered"
+# The nginx /api proxy specifically: if the SPA fallback swallows /api/*, this
+# returns HTML with a 200 and the site looks fine while being entirely broken.
+check "frontend /api proxy"   docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 "http://localhost:5173/api/health" \
+  || rollback "the frontend's /api proxy is not reaching the backend"
+
+# Edge check. No credentials: a site behind basic_auth or Cloudflare Access
+# answers 401/302 before it ever proxies, which is exactly what proves DNS, the
+# tunnel and Caddy are alive. A dead origin gives 502 — that is what we look for.
+edge_ok() {
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 -A "$UA" "$PUBLIC_URL/")
+  case "$code" in 200|301|302|401) return 0 ;; *) return 1 ;; esac
+}
+check "edge $PUBLIC_URL" edge_ok || rollback "$PUBLIC_URL did not answer through the tunnel"
+
+# ------------------------------------------------------------------- succeed --
+
+echo "$TARGET_SHA" > "$DEPLOYED_FILE"
+docker image prune -f --filter "dangling=true" >/dev/null 2>&1 || true
+notify INFO "deployed $TARGET_DESC to $ENV_NAME — all health checks passed"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Poll GitHub for deploys (%i)
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+# Stops every app on the Pi waking at the same instant after a power cut.
+RandomizedDelaySec=15s
+AccuracySec=10s
+Unit=app-deploy@%i.service
+
+[Install]
+WantedBy=timers.target

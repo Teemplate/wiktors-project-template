@@ -1,0 +1,18 @@
+[Unit]
+Description=Deploy agent (%i)
+Documentation=file://docs/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/app-deploy %i
+# The agent is idempotent and exits 0 when there is nothing to do. A failure
+# means a deploy was attempted and rolled back -- that is worth surfacing in
+# `systemctl --user status`, so do not swallow it.
+TimeoutStartSec=3600
+Nice=10
+# The Pi serves the live site while this builds. Keep the build off the
+# critical path rather than letting it pin all four cores.
+CPUWeight=40
+IOWeight=40

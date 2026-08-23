@@ -1,0 +1,110 @@
+# PRODUCTION — Raspberry Pi 5, behind the shared Caddy + cloudflared connector.
+#
+#   docker --context pi-deploy compose -f compose.deploy.yml -p <app> up -d --build
+#   (swap pi-deploy -> pi-remote when off the home LAN)
+#
+# THE HOUSE PATTERN — three rules, each load-bearing:
+#
+#  1. NO published ports and NO Caddy of our own. The Pi runs ONE shared Caddy
+#     plus a cloudflared connector; no inbound ports are open on the router.
+#     Publishing a port here would expose nothing and collide with other apps.
+#  2. Join the EXTERNAL `web` network so that shared Caddy can reach us by
+#     container name. Its block is:
+#         http://<app>.example.com { reverse_proxy <app>-frontend:5173 }
+#     The `http://` is deliberate — Cloudflare terminates TLS at its edge, and
+#     Caddy has no public port on which to complete an ACME challenge.
+#  3. Persistent data BIND-MOUNTS from /mnt/ssd/apps/<app>/, never baked into an
+#     image, so a code-only redeploy never touches data.
+#
+# `-p <app>` is NOT optional: a different project name builds a second image set
+# and then collides on container_name.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ${APP_NAME}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - /mnt/ssd/apps/${APP_NAME}/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  # One-shot: applies migrations and EXITS. The app services wait for it to
+  # complete successfully, so a bad revision aborts the deploy with the old
+  # containers still serving, instead of leaving a half-migrated database
+  # behind a running app. Same image as the backend -- no second build.
+  migrate:
+    build:
+      context: ./backend
+    image: ${APP_NAME}-backend
+    container_name: ${APP_NAME}-migrate
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks: [internal]
+
+  backend:
+    build:
+      context: ./backend
+    image: ${APP_NAME}-backend
+    container_name: ${APP_NAME}-backend
+    restart: unless-stopped
+    # env_file is read by the compose CLI on the DEV MACHINE, not on the Pi.
+    env_file: .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # python, not curl: the slim image has python and not curl, and adding
+      # curl purely for a healthcheck grows the production image for nothing.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [internal]
+
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+      args:
+        # VITE_* are inlined at BUILD time, so this must be a build arg — an
+        # environment: entry would arrive too late to affect the bundle.
+        - VITE_API_BASE=${VITE_API_BASE}
+    image: ${APP_NAME}-frontend
+    container_name: ${APP_NAME}-frontend
+    restart: unless-stopped
+    environment:
+      # nginx proxies /api here. Must be the backend's real container name,
+      # which carries the compose project prefix.
+      - BACKEND_HOST=${APP_NAME}-backend
+    depends_on:
+      backend:
+        condition: service_healthy
+    # `web` reaches the shared Caddy; `internal` reaches our own backend.
+    networks: [web, internal]
+
+networks:
+  web:
+    external: true
+  internal:

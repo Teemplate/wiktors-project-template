@@ -1,0 +1,13 @@
+# NOT OPTIONAL. A missing .dockerignore has broken real deployments:
+# the build context ballooned to 1.1GB shipped over SSH to the Pi, and — worse —
+# `COPY . .` overwrote the image's arm64 install with the host's x86-64 one.
+.venv/
+.venv-test/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.db
+.env
+.env.*
+tests/
+.git/

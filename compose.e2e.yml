@@ -1,0 +1,86 @@
+# Ephemeral stack for the end-to-end tests.
+#
+# Deliberately NOT compose.deploy.yml: that file bind-mounts /mnt/ssd/apps/...,
+# which only exists on the Pi, and joins the external `web` network, which only
+# exists where the shared Caddy runs. Everything here is repo-relative and
+# disposable, so a CI runner or a laptop can bring the whole app up from a
+# clean checkout.
+#
+# Differences from production that are on purpose:
+#   - Postgres keeps its data in tmpfs. Nothing survives the run, which is the
+#     point: a test that depends on yesterday's state is a test that fails on a
+#     Tuesday for no reason.
+#   - Ports are published to localhost so Playwright can reach the site.
+#   - Migrations run as a one-shot `migrate` service that must EXIT ZERO before
+#     the app starts, so a bad revision fails here instead of leaving a
+#     half-migrated database behind a running container.
+#
+# Ports are overridable (E2E_WEB_PORT / E2E_API_PORT) because a fixed port is a
+# booby trap on a machine that already runs other projects.
+#
+#   docker compose -f compose.e2e.yml -p <app>-e2e up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: e2e-not-a-secret
+      POSTGRES_DB: e2e
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # Depending on the container being "started" is not enough: Postgres
+      # accepts connections seconds after the process exists.
+      test: ["CMD-SHELL", "pg_isready -U e2e -d e2e"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: ./backend
+    image: ${E2E_PROJECT:-app}-e2e-backend:latest
+    command: ["alembic", "upgrade", "head"]
+    env_file: [.env.e2e]
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    image: ${E2E_PROJECT:-app}-e2e-backend:latest
+    env_file: [.env.e2e]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    ports: ["${E2E_API_PORT:-8273}:8000"]
+    healthcheck:
+      # python rather than curl: the slim image has python and does not have
+      # curl, and adding curl purely for a healthcheck grows the production
+      # image for no reason.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  web:
+    build:
+      context: ./frontend
+      target: prod
+      args:
+        # Empty: nginx proxies /api same-origin, exactly as in production.
+        VITE_API_BASE: ""
+    image: ${E2E_PROJECT:-app}-e2e-web:latest
+    environment:
+      # Compose's default network aliases the service name, so this resolves
+      # without knowing the project prefix.
+      BACKEND_HOST: backend
+    depends_on:
+      backend: {condition: service_healthy}
+    ports: ["${E2E_WEB_PORT:-5273}:5173"]

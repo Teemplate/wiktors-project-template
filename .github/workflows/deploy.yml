@@ -1,0 +1,83 @@
+name: Deploy
+
+# Push to main -> the Pi rebuilds and restarts itself.
+#
+# This runs on a SELF-HOSTED RUNNER ON THE PI, not GitHub's infrastructure. The
+# house router has no inbound ports open, so nothing can SSH in to deploy; the
+# runner instead makes an outbound long-poll to GitHub and pulls the job. That
+# also means the image builds natively on arm64 — no cross-compilation, and no
+# build context shipped over the network.
+#
+# Setup for the runner is in docs/DEPLOYMENT.md. Until it exists, this workflow
+# simply never runs, and deploys are the manual command in that document.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # lets a release be re-deployed without a new commit
+
+concurrency:
+  # Two builds of the same compose project would fight over the container name.
+  group: ${{ github.repository }}-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # OFF until you opt in. Set the repository variable SELF_HOSTED_DEPLOY=true
+    # (`gh variable set SELF_HOSTED_DEPLOY --body true`) once the Pi's runner is
+    # registered.
+    #
+    # Without this guard the job QUEUES FOREVER on a fresh repo: it targets a
+    # self-hosted runner label that does not exist yet, so GitHub keeps it
+    # pending indefinitely (observed: 8h+) and every push adds another. Skipping
+    # is the honest state for a deploy that is not set up.
+    #
+    # Not needed at all if you use the pull-based agent in deploy/ instead --
+    # delete this file in that case.
+    if: vars.SELF_HOSTED_DEPLOY == 'true'
+    # Label the Pi's runner with the app name and add it here.
+    runs-on: [self-hosted, CHANGEME-app-label]
+    env:
+      APP_NAME: CHANGEME-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Provide the runtime secrets
+        # The .env is deliberately NOT a GitHub secret: it lives only on the Pi,
+        # outside the repo, so it never leaves the machine that uses it. compose
+        # reads `.env` from the project directory, so link the Pi's copy in.
+        run: |
+          test -f /mnt/ssd/apps/${APP_NAME}/.env || {
+            echo "::error::/mnt/ssd/apps/${APP_NAME}/.env is missing on the Pi"; exit 1; }
+          ln -sf /mnt/ssd/apps/${APP_NAME}/.env .env
+
+      - name: Build and restart
+        # -p is not optional: a different project name builds a second image set
+        # and then collides on container_name.
+        run: |
+          docker compose -f compose.deploy.yml -p ${APP_NAME} up -d --build --remove-orphans
+
+      - name: Wait for it to answer
+        # THE GATE. A container that starts and then dies on a bad import would
+        # otherwise be reported as a successful deploy.
+        run: |
+          for attempt in $(seq 1 60); do
+            if docker exec ${APP_NAME}-backend python -c "
+          import json, urllib.request
+          h = json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health'))
+          raise SystemExit(0 if h.get('ok') else 1)
+          " 2>/dev/null; then
+              echo "healthy after ${attempt}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::${APP_NAME} did not become healthy"
+          docker logs --tail 50 ${APP_NAME}-backend
+          exit 1
+
+      - name: Warn if a placeholder secret reached production
+        run: |
+          docker exec ${APP_NAME}-backend python -c "
+          import json, urllib.request
+          h = json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health'))
+          print('::warning::SECRET_KEY is still the dev placeholder' if h.get('placeholder_secret') else 'secret ok')
+          "

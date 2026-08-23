@@ -1,0 +1,11 @@
+# NOT OPTIONAL — see backend/.dockerignore. node_modules (~680MB) and dist/
+# must never enter the build context: shipping them over SSH to the Pi took
+# ~19 minutes on one app, and `COPY . .` after the deps layer overwrote a
+# correct arm64 install with the host's x86-64 binaries.
+node_modules/
+dist/
+.next/
+out/
+.env
+.env.*
+.git/
