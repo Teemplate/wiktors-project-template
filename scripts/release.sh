@@ -142,9 +142,15 @@ echo "release: pushing main"
 run git push origin main
 run git push origin "$VERSION"
 
-echo "release: merging back into develop"
+# Merge MAIN back, not the release branch. Merging the release branch is a no-op
+# whenever it is identical to develop, which leaves main's merge commit off
+# develop forever — and the BEHIND check at the top of the next release then
+# reads that as an unmerged hotfix and refuses to run. Merging main is what
+# keeps `origin/develop..origin/main` empty between releases, which is the
+# invariant this whole script depends on. (Caught by actually running it.)
+echo "release: merging main back into develop"
 run git checkout develop
-run git merge --no-ff "release/$VERSION" -m "Merge branch 'release/$VERSION' into develop"
+run git merge --no-ff main -m "Merge main back into develop after $VERSION"
 run git push origin develop
 run git branch -d "release/$VERSION"
 
