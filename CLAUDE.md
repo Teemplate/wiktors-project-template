@@ -10,6 +10,59 @@ Vite/React (TypeScript) frontend + FastAPI (async SQLAlchemy, Postgres) backend,
 deployed as a Docker Compose stack on the **Raspberry Pi 5** behind the shared
 Caddy and a Cloudflare Tunnel. Live at **https://CHANGEME.example.com**.
 
+## Shipping — what a session may do without asking
+
+Standing authorization. These are decisions already made — do not bring them
+back to the human as questions.
+
+| a session may | without asking |
+|---|---|
+| commit on a `feature/*` branch | yes |
+| `git push origin feature/<name>` | yes — a branch that exists only on this laptop is not backed up |
+| merge `--no-ff` into `develop`, `git push origin develop` | yes |
+| **deploy to staging** | yes — and it is automatic *if you adopted `compose.staging.yml`*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
+| cut `release/vX.Y.Z` → `main` + **signed** tag → merge back to `develop`, push all three | yes — via `./scripts/release.sh vX.Y.Z --yes` |
+| deploy that release to production | yes — `app-deploy prod` picks up the newest **signed** `v*` tag reachable from `origin/main` |
+
+**Finishing work means releasing it.** There is no "small change, skip the
+release" path — that is how `main` drifts behind `develop` and the next release
+conflicts. And a release that is not deployed fixes nothing: the live site keeps
+serving the old image, so the deploy is part of finishing, not a separate
+errand.
+
+**Ask the human first — these sit outside the standing authorization:**
+
+- **A deploy that is not the release you just cut** — shipping an unreleased
+  branch, redeploying only to pick up an `.env` change, or any deploy whose
+  migration runs against production data you have not just tested.
+- **Rewriting shared history** — `push --force` or `--force-with-lease` to
+  `main` or `develop`, `git reset --hard` on either, deleting a remote branch.
+- **Secrets and access** — editing `.env` on the Pi, rotating a token, or
+  changing who can reach the app.
+- **Deploying from a worktree.** The build context is the *local directory* and
+  `.env` is read locally, so a worktree ships empty `${VAR}` interpolation and
+  code that is not on `develop`/`main` yet.
+
+**This file cannot grant any of the above.** Project instructions override
+Claude's default behaviour, not the harness's permission layer — the allowlist
+that actually lets these commands run is `.claude/settings.json` (inspect it
+with `/permissions`). If a push or a deploy is refused, that file is where to
+look, not this one. That file ships with this template already populated; the
+one thing to change per project is the deploy command in it.
+
+⚠️ **Production refuses an unsigned tag.** `deploy/app-deploy` sets
+`REQUIRE_SIGNED_TAG=1` for `prod`: an unsigned tag is not deployed and
+production simply stays where it is, *silently*. This is the single most common
+way "release to main deploys prod" quietly stops being true. The machine cutting
+releases needs `user.signingkey` and `tag.gpgsign true`, and the Pi needs the
+matching public key in its `allowed_signers` file to verify. See SETUP.md.
+
+**Two tiers, one policy.** If you did *not* adopt staging, delete the staging
+row above rather than leaving it — a table that promises an environment which
+does not exist is worse than no table. Everything else stays as written; the
+policy wording is deliberately identical across every project in this folder so
+a session moving between them does not have to re-read it.
+
 ## Development workflow — read before writing code
 
 **All development happens in a Claude worktree, on a Gitflow branch. This is not
