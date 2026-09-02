@@ -77,7 +77,8 @@ keep uncommitted WIP there — so writing code in it corrupts someone else's wor
 
 Branch roles are standard Gitflow: `main` = tagged releases only (never commit
 directly), `develop` = integration, `feature/*` off `develop`,
-`release/vX.Y.Z` off `develop` → `main` with a tag → merged back to `develop`,
+`release/vX.Y.Z` off `develop` → `main` with a tag → merged back to `develop`
+(cut it with `./scripts/release.sh vX.Y.Z`, never by hand),
 `hotfix/*` off **`main`** → merged into **both**.
 
 **Checks before every merge:**
@@ -139,6 +140,44 @@ docker --context pi-deploy compose -f compose.deploy.yml -p CHANGEME up -d --bui
   `http://CHANGEME.example.com { reverse_proxy CHANGEME-frontend:5173 }`. The
   `http://` is deliberate: Cloudflare terminates TLS at its edge and Caddy has no
   public port on which to complete an ACME challenge.
+
+### Cutting a release — `./scripts/release.sh`
+
+```bash
+./scripts/release.sh v1.2.0 --dry-run   # print every command, run none
+./scripts/release.sh v1.2.0             # develop → release/vX.Y.Z → main (tagged) → develop
+```
+
+The chain is only six commands, but both ways it goes wrong are quiet ones.
+Merging a feature branch straight to `main` leaves `main` with commits `develop`
+has never seen, so the *next* release conflicts; forgetting the final merge back
+leaves the release commit only on `main`, to be re-merged next time. Neither
+surfaces until weeks later, so the script does the whole chain or none of it.
+
+Run it from the **primary checkout**. It refuses in a worktree — nominally
+because it checks out three branches, but really for the reason above: a
+worktree has no `.env`, so anything built from one ships empty `${VAR}`. It also
+refuses on a dirty tree, on an existing tag, when `develop` has nothing to ship,
+and — the one worth having — when `main` holds commits `develop` lacks, which
+means a hotfix was never merged back and a human has to choose what to do.
+
+⚠️ **It does not claim to have deployed.** `deploy.yml` only runs when the
+repository variable `SELF_HOSTED_DEPLOY` is `true` *and* a self-hosted runner
+exists; until you opt in, a push to `main` is just a push and the deploy is
+still the manual compose command above. The script reads that variable through
+`gh` and tells you which case you are in — and says so plainly when it cannot
+read it, rather than guessing.
+
+⚠️ **A Claude session cannot run this, and cannot `git push origin main`.** The
+block is in the agent harness that starts these sessions ("never push to
+main/master, force-push, or merge"); it applies to every repository, and
+**nothing written in this file can lift it** — project instructions override
+Claude's default behaviour, not the harness's own rules. Do not add "Claude may
+deploy" here expecting it to take effect. A session does everything up to the
+release — builds the feature, commits, pushes the `feature/*` branch — and hands
+over `./scripts/release.sh vX.Y.Z`. A human runs it. If that ever needs to
+change, the lever is the harness configuration or a workflow that cuts the
+release itself, not this file.
 
 Details and the first-deploy ordering: **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**.
 One-time server setup (tunnel, Caddy, SSH, signing): **[docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md)**.
