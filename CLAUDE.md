@@ -20,9 +20,9 @@ back to the human as questions.
 | commit on a `feature/*` branch | yes |
 | `git push origin feature/<name>` | yes — a branch that exists only on this laptop is not backed up |
 | merge `--no-ff` into `develop`, `git push origin develop` | yes |
-| **deploy to staging** | yes — and it is automatic *if you adopted `compose.staging.yml`*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
+| **deploy to staging** | yes — automatic *if you adopted `compose.staging.yml` + the `deploy/` agent*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
 | cut `release/vX.Y.Z` → `main` + **signed** tag → merge back to `develop`, push all three | yes — via `./scripts/release.sh vX.Y.Z --yes` |
-| deploy that release to production | yes — `app-deploy prod` picks up the newest **signed** `v*` tag reachable from `origin/main` |
+| deploy that release to production | yes — **whichever of the two paths this project adopted**: the pull-based `app-deploy prod` (newest **signed** `v*` tag reachable from `origin/main`), or the self-hosted runner in `.github/workflows/deploy.yml`, or the manual compose command in § Deployment if neither is set up yet |
 
 **Finishing work means releasing it.** There is no "small change, skip the
 release" path — that is how `main` drifts behind `develop` and the next release
@@ -168,16 +168,37 @@ still the manual compose command above. The script reads that variable through
 `gh` and tells you which case you are in — and says so plainly when it cannot
 read it, rather than guessing.
 
-⚠️ **A Claude session cannot run this, and cannot `git push origin main`.** The
-block is in the agent harness that starts these sessions ("never push to
-main/master, force-push, or merge"); it applies to every repository, and
-**nothing written in this file can lift it** — project instructions override
-Claude's default behaviour, not the harness's own rules. Do not add "Claude may
-deploy" here expecting it to take effect. A session does everything up to the
-release — builds the feature, commits, pushes the `feature/*` branch — and hands
-over `./scripts/release.sh vX.Y.Z`. A human runs it. If that ever needs to
-change, the lever is the harness configuration or a workflow that cuts the
-release itself, not this file.
+⚠️ **A session runs this itself** — see § Shipping at the top of this file.
+
+This paragraph used to say the opposite: that a session "cannot run this, and
+cannot `git push origin main`", because of a blanket harness rule quoted as
+*"never push to main/master, force-push, or merge"*. **That was wrong, and it
+was wrong in an expensive way** — it was copied into several projects, where it
+stranded sessions holding finished, tested commits they believed they were
+forbidden to ship.
+
+Two things were being confused. It is true that **nothing in this file grants a
+permission**: project instructions override Claude's default behaviour, not the
+harness's permission layer. But the permission layer is *configurable*, and the
+lever is one allowlist entry — `Bash(./scripts/release.sh:*)` in
+`.claude/settings.json` — not an immovable property of the harness. Once that
+rule is present a session cuts and deploys the release; without it, it cannot,
+and no amount of prose here changes that either way.
+
+**Be clear-eyed about what that rule grants.** The permission layer gates the
+`Bash` call, not what the script does inside it, so allowing
+`./scripts/release.sh` allows every `git push origin main` it makes. That is a
+standing production-deploy grant, and the only thing between it and the live
+server is the script's own preconditions. That is the intent — but it is the
+reason the push rules in `.claude/settings.json` are scoped
+(`git push origin develop`, `git push origin feature/…`) rather than a blanket
+`Bash(git push:*)`: the script should stay the *only* route to `main`, so its
+preconditions cannot be walked around.
+
+**A session must pass `--yes`.** The retype-the-version prompt reads stdin,
+which is closed in a non-interactive call, so an unattended run reads an empty
+reply and aborts. For a session the confirmation is the message in chat asking
+for the release, not the prompt.
 
 Details and the first-deploy ordering: **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**.
 One-time server setup (tunnel, Caddy, SSH, signing): **[docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md)**.
