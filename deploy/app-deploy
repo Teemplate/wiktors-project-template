@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# app-deploy — pull-based deploy agent.  (CHANGEME: rename to <app>-deploy)
+# app-deploy — pull-based deploy agent.  (rename it to <app>-deploy)
 #
 # Runs ON THE PI as a systemd *user* timer. Nothing on the internet can start a
 # deploy: this polls GitHub outbound with a read-only deploy key scoped to one
@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-# ------------------------------------------------------------------ CHANGEME --
+# ---------------------------------------------------------- SET PER PROJECT --
 APP="CHANGEME-app"                     # compose project + container prefix
 DOMAIN="CHANGEME-app.example.com"      # public hostname (production)
 STAGING_DOMAIN="CHANGEME-app-staging.example.com"

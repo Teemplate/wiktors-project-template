@@ -263,8 +263,9 @@ git -c user.email="$(git config --global user.email || echo dev@localhost)" \
     commit -q -m "chore: initial commit from project-template
 
 Scaffolded with scripts/init-project.sh. Carries the template's development
-environment: seed script, disposable e2e stack, alembic migrations, 7-job CI,
-and a pull-based signed-tag deploy agent."
+environment: seed script, disposable e2e stack, alembic migrations, 8-job CI,
+instructions for both Codex and Claude Code, and a pull-based signed-tag deploy
+agent."
 git branch develop
 echo "→ git history started: main + develop"
 

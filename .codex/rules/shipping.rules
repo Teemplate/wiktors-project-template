@@ -189,10 +189,12 @@ prefix_rule(pattern = ["gh", ["run", "workflow"]], decision = "allow")
 
 prefix_rule(pattern = ["ssh", ["pi-deploy", "pi-remote"]], decision = "allow")
 
-# CHANGEME — the one rule to review per project, alongside its twin in
+# REVIEW PER PROJECT — the one rule to check, alongside its twin in
 # `.claude/settings.json`. This is the manual production deploy from AGENTS.md
 # § Deployment; delete it on a project that deploys only through `deploy/` or
-# the self-hosted runner.
+# the self-hosted runner. Deliberately not spelled with the placeholder word
+# that `init-project.sh` substitutes — it would rewrite this sentence into the
+# app's name and the instruction would be lost.
 prefix_rule(
     pattern = ["docker", "--context", "pi-deploy", "compose"],
     decision = "allow",
