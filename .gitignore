@@ -41,6 +41,12 @@ coverage/
 .DS_Store
 *.swp
 
-# Claude local settings (settings.json IS tracked; .local.json is not)
+# Agent-local settings. The tracked files -- .claude/settings.json and
+# .codex/{config.toml,rules/} -- ARE the shipping policy and belong in the repo.
+# What is ignored is the per-machine layer on top of them.
 .claude/settings.local.json
 .claude/worktrees/
+# Codex has no project-scoped "local" file: personal overrides (model, sandbox,
+# network access, the trust entry this project needs) go in ~/.codex/config.toml,
+# outside the repo entirely. This rule is here for anyone who invents one anyway.
+.codex/config.local.toml

@@ -39,15 +39,16 @@ what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 | `frontend/` | Vite + React, multi-stage Dockerfile, vitest unit tests, Playwright e2e |
 | `frontend/nginx.conf` | SPA fallback **and the `/api` proxy** — without the latter `/api/*` returns `index.html` and the frontend can never reach its backend |
 | `*/.dockerignore` | **Both present deliberately** — a missing one shipped a 1.1 GB context over SSH and overwrote an arm64 install with x86-64 binaries, twice |
-| `.github/workflows/ci.yml` | 7 jobs: tests, typecheck, build, one-alembic-head, migrations up/down, destructive-migration guard, images, gitleaks |
+| `.github/workflows/ci.yml` | 8 jobs: tests, typecheck, build, one-alembic-head, migrations up/down, destructive-migration guard, images, gitleaks, agent instructions |
 | `.github/workflows/e2e.yml` | The full stack: nightly, on demand, or on a `run-e2e` label |
 | `.github/workflows/deploy.yml` | The *alternative* deploy model (self-hosted runner). Pick this **or** `deploy/`, not both |
 | `scripts/init-project.sh` | Turns a copy of this template into a real project: placeholders, git history, GitHub repo |
 | `scripts/check_migration_safety.py` | Fails a PR that drops a table or column in `upgrade()` |
-| `.claude/hooks/session-start.sh` | Re-roots auto-created agent branches from `main` onto `develop` |
+| `scripts/hooks/session-start.sh` | Re-roots auto-created agent branches from `main` onto `develop`. Run by **both** agents, from a path belonging to neither |
 | `.env.example` | Every variable, with safe local defaults |
 | `local.example/` | Template for `local/` — your own hostnames, paths and app inventory, gitignored |
-| `CLAUDE.md` | What an agent session must read before writing code |
+| `AGENTS.md`, `CLAUDE.md` | What an agent session must read before writing code. Byte-identical copies — Codex reads the first, Claude Code the second, and CI fails if they drift |
+| `.codex/`, `.claude/` | The shipping policy in each agent's own syntax: `rules/shipping.rules` and `settings.json`. Prose alone grants nothing; these are the files that do |
 | `docs/DEVELOPING.md` | Gitflow + worktrees, the checks, schema changes, and the gotchas |
 | `docs/INFRASTRUCTURE.md` | **Start here if you have no server yet** — Pi, Cloudflare Tunnel, shared Caddy, SSH, signing keys |
 | `docs/DEPLOYMENT.md` | The Pi pattern, both deploy models, plus static-site variants |

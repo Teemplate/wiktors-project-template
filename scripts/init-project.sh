@@ -248,7 +248,7 @@ cd frontend && npm run typecheck && npm test && npm run build
 
 | | |
 |---|---|
-| How to develop here | [CLAUDE.md](./CLAUDE.md), [docs/DEVELOPING.md](./docs/DEVELOPING.md) |
+| How to develop here | [AGENTS.md](./AGENTS.md) or [CLAUDE.md](./CLAUDE.md) — same file, one per agent — and [docs/DEVELOPING.md](./docs/DEVELOPING.md) |
 | How it deploys | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
 | Backups | [docs/BACKUPS.md](./docs/BACKUPS.md) |
 | Remaining setup | [SETUP.md](./SETUP.md) — steps 6 onward (Pi, DNS, Caddy) |

@@ -64,9 +64,11 @@ Replace the name everywhere:
 
 ```bash
 grep -rl 'project-template\|CHANGEME' . --exclude-dir=node_modules --exclude-dir=.git
-# then edit: .env.example, README.md, CLAUDE.md, frontend/package.json,
+# then edit: .env.example, README.md, AGENTS.md, CLAUDE.md, frontend/package.json,
 #            deploy/app-deploy (APP, DOMAIN, STAGING_DOMAIN, DATA_ROUTE),
-#            .github/workflows/deploy.yml (runs-on label + APP_NAME)
+#            .github/workflows/deploy.yml (runs-on label + APP_NAME),
+#            .codex/rules/shipping.rules and .claude/settings.json (deploy command)
+# AGENTS.md and CLAUDE.md must stay byte-identical -- edit one, cp over the other.
 ```
 
 ## 2. Version control — **first**, before any code
@@ -116,8 +118,9 @@ target it:
 gh repo edit <your-org>/<app> --default-branch develop
 ```
 
-(If you keep `main` as the default, leave `.claude/hooks/session-start.sh` in
-place — that is exactly the case it exists for.)
+(If you keep `main` as the default, leave `scripts/hooks/session-start.sh` in
+place — that is exactly the case it exists for. Both agents run it: Claude Code
+through `.claude/settings.json`, Codex through `.codex/config.toml`.)
 
 ## 4. Local environment
 
@@ -223,7 +226,7 @@ In order — the order matters:
 
 Six months from now — or for anyone else picking this up — the *how* is the part
 nobody can reconstruct. Fill in the Deployment section of this project's
-`CLAUDE.md` with the concrete facts:
+`AGENTS.md` — then `cp AGENTS.md CLAUDE.md` — with the concrete facts:
 
 ```markdown
 Deployed <date>. Live at https://<app>.example.com.
@@ -278,5 +281,7 @@ command is the deploy.
 - [ ] Caddy block added and Caddy reloaded
 - [ ] Deployed; an `/api/*` route verified, not just a page
 - [ ] **One** deploy model chosen; the other deleted
-- [ ] Deployment facts written into this project's `CLAUDE.md`
+- [ ] Deployment facts written into this project's `AGENTS.md`, copied to `CLAUDE.md`
+- [ ] Deploy command reviewed in `.claude/settings.json` **and** `.codex/rules/shipping.rules`
+- [ ] Using Codex? The checkout is marked `trust_level = "trusted"` in `~/.codex/config.toml`
 - [ ] Placeholders replaced (`grep -r CHANGEME`)
