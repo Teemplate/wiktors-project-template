@@ -19,9 +19,10 @@
     "develop) cannot be walked around. A session must pass --yes; the retype prompt",
     "reads stdin, which is closed non-interactively.",
     "",
-    "CHANGEME: the docker --context line in the allow list is the manual production",
-    "deploy. It is the one entry to review per project - delete it on a project that",
-    "deploys only through deploy/ or the self-hosted runner."
+    "REVIEW PER PROJECT: the docker --context line in the allow list is the manual",
+    "production deploy. Delete it on a project that deploys only through deploy/ or",
+    "the self-hosted runner. (Written without the placeholder word on purpose:",
+    "init-project.sh substitutes that word, and would rewrite this sentence.)"
   ],
   "permissions": {
     "allow": [
