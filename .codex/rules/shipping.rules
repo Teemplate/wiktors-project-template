@@ -6,6 +6,8 @@
 # repo, not live in one machine's `~/.codex/config.toml`.
 #
 # ⚠️ Read only when the project is TRUSTED. See the header of ../config.toml.
+# ⚠️ Rules are experimental, in Codex's own words, and the language may change.
+# `codex execpolicy check` is how you find out that it has.
 #
 # `prefix_rule` is the only builtin. A pattern is a list of literal command
 # TOKENS; a nested list at one position is a union of alternatives for that
@@ -141,6 +143,28 @@ prefix_rule(
         ["git", "push", "origin", "HEAD:main"],
     ],
     not_match = [["git", "push", "origin", "develop"]],
+)
+
+# The same push with an upstream flag in front of the remote. This needs its own
+# rule and is easy to miss: a pattern is positional, so the rule above requires
+# `origin` as the third token and `git push -u origin main` walks straight past
+# it into the broad allow. Any new spelling of "push somewhere" added to the
+# allow list above needs its refusal repeated here.
+prefix_rule(
+    pattern = [
+        "git",
+        "push",
+        ["-u", "--set-upstream"],
+        "origin",
+        ["main", "HEAD:main", "+main", "develop:main"],
+    ],
+    decision = "forbidden",
+    justification = "release through ./scripts/release.sh, never by hand",
+    match = [
+        ["git", "push", "-u", "origin", "main"],
+        ["git", "push", "--set-upstream", "origin", "HEAD:main"],
+    ],
+    not_match = [["git", "push", "-u", "origin", "develop"]],
 )
 
 # --- releasing ---------------------------------------------------------------
