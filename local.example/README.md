@@ -45,4 +45,4 @@ again?" without that answer being in a public repository.
 
 Add more files if you have more to record. Nothing reads these
 programmatically — they are for you, and for an agent session that has been
-pointed at them by `CLAUDE.md`.
+pointed at them by `AGENTS.md`/`CLAUDE.md`.

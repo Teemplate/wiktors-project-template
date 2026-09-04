@@ -1,0 +1,179 @@
+# This project's shipping policy, in Codex's execpolicy language. The prose it
+# encodes is AGENTS.md § Shipping; Claude Code's copy of the same policy is the
+# `permissions` block in `.claude/settings.json`. Change one, change both.
+#
+# Checked in on purpose: these grants ARE the policy and should travel with the
+# repo, not live in one machine's `~/.codex/config.toml`.
+#
+# ⚠️ Read only when the project is TRUSTED. See the header of ../config.toml.
+#
+# `prefix_rule` is the only builtin. A pattern is a list of literal command
+# TOKENS; a nested list at one position is a union of alternatives for that
+# token. There are no wildcards and no regex. When several rules match, the
+# strictest decision wins, so `forbidden` beats `allow`.
+#
+# `match` / `not_match` are assertions, checked when the file is PARSED — a
+# wrong one is a hard error, not a warning. They are the reason you can trust
+# the comments in here. Run them, and check anything else, with:
+#
+#   codex execpolicy check --pretty --rules .codex/rules/shipping.rules \
+#       -- git push origin develop
+#
+# Two limits, neither papered over:
+#
+#   * A pattern is a prefix, so a flag at the END of a command sits past the end
+#     of it and is not seen. `git push origin develop --force` matches the allow
+#     below and IS ALLOWED. Forbidding force-push is prose in AGENTS.md; this
+#     file cannot enforce it. (`--force` written before the remote is caught,
+#     which is what the rules below are worth.)
+#   * A command wrapped in `bash -lc '...'` matches nothing here and falls
+#     through to the ordinary approval prompt — a fall-back to asking, not a
+#     bypass, but do not read a `bash -lc` experiment as evidence about this
+#     policy.
+#
+# And one difference from `.claude/settings.json` worth understanding rather
+# than "fixing": Claude Code matches command STRINGS, so it can allowlist
+# `git push origin feature/:*` and catch every branch under it. Codex matches
+# whole tokens, so `feature/` simply is not `feature/x` and such a rule would
+# never fire. The translation is therefore inverted — push to `origin` broadly,
+# and forbid the one destination that matters — which lands on the same
+# effective policy, because an oddly-named branch on the remote is a backup and
+# `main` is the only push that ships anything.
+
+# --- reading the repo --------------------------------------------------------
+prefix_rule(pattern = ["git", "status"], decision = "allow")
+prefix_rule(pattern = ["git", "diff"], decision = "allow")
+prefix_rule(pattern = ["git", "log"], decision = "allow")
+prefix_rule(pattern = ["git", "show"], decision = "allow")
+prefix_rule(pattern = ["git", "branch"], decision = "allow")
+prefix_rule(pattern = ["git", "remote"], decision = "allow")
+prefix_rule(pattern = ["git", "rev-parse"], decision = "allow")
+prefix_rule(pattern = ["git", "rev-list"], decision = "allow")
+prefix_rule(pattern = ["git", "describe"], decision = "allow")
+prefix_rule(pattern = ["git", "check-ignore"], decision = "allow")
+prefix_rule(
+    pattern = ["git", "verify-tag"],
+    decision = "allow",
+    justification = "production refuses an unsigned tag; checking one is read-only",
+)
+
+# --- local work --------------------------------------------------------------
+# Most of these are already permitted inside a `workspace-write` sandbox, where
+# rules do not apply. They are written out anyway, one per line of the Claude
+# Code list, so the two grant files can be compared by eye.
+prefix_rule(pattern = ["git", "add"], decision = "allow")
+prefix_rule(pattern = ["git", "commit"], decision = "allow")
+prefix_rule(pattern = ["git", "switch"], decision = "allow")
+prefix_rule(pattern = ["git", "checkout"], decision = "allow")
+prefix_rule(pattern = ["git", "merge"], decision = "allow")
+prefix_rule(pattern = ["git", "tag"], decision = "allow")
+prefix_rule(
+    pattern = ["git", "worktree"],
+    decision = "allow",
+    justification = "all development happens in a worktree; see AGENTS.md",
+)
+prefix_rule(
+    pattern = ["git", "fetch"],
+    decision = "allow",
+    justification = "needs the network, but changes nothing anyone else can see",
+)
+
+# --- pushing -----------------------------------------------------------------
+# A branch that exists only on this laptop is not backed up, so pushing one is
+# granted; so is `develop`, the integration branch. `main` is excluded by the
+# rule below it, which is stricter and therefore wins.
+prefix_rule(
+    pattern = ["git", "push", "origin"],
+    decision = "allow",
+    match = [
+        ["git", "push", "origin", "feature/api-tokens"],
+        ["git", "push", "origin", "develop"],
+    ],
+    not_match = [
+        # a different remote is not this policy's business
+        ["git", "push", "upstream", "develop"],
+    ],
+)
+prefix_rule(pattern = ["git", "push", "-u", "origin"], decision = "allow")
+prefix_rule(pattern = ["git", "push", "--set-upstream", "origin"], decision = "allow")
+
+# --- rewriting shared history: ask a human -----------------------------------
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f", "--force-with-lease"]],
+    decision = "forbidden",
+    justification = "rewriting shared history is the human's call",
+    match = [["git", "push", "--force", "origin", "develop"]],
+)
+prefix_rule(
+    pattern = ["git", "push", "origin", ["--force", "-f"]],
+    decision = "forbidden",
+    justification = "rewriting shared history is the human's call",
+)
+# `origin/` is a token prefix in Claude Code's list and catches every remote
+# branch. Here it would match nothing, because `origin/` is not the token
+# `origin/develop`. So: name the shared branches explicitly and forbid those,
+# and make every other hard reset ask, since the ones this policy cares about
+# are exactly the ones that throw away work someone else is holding.
+prefix_rule(
+    pattern = ["git", "reset", "--hard", ["origin/main", "origin/develop", "main", "develop"]],
+    decision = "forbidden",
+    justification = "discards work another session may be holding",
+    match = [["git", "reset", "--hard", "origin/develop"]],
+)
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "prompt",
+    justification = "a hard reset is unrecoverable; say which tree you mean",
+)
+
+# The one that matters. `./scripts/release.sh` is the ONLY route to `main`, so a
+# direct push is forbidden and the script's preconditions — clean tree, unused
+# tag, `main` not already ahead of `develop`, the final merge back — cannot be
+# walked around. The union covers the refspec spellings of the same push; it is
+# not exhaustive, and it is not meant to defeat someone determined, only to stop
+# an absent-minded one-liner.
+prefix_rule(
+    pattern = ["git", "push", "origin", ["main", "HEAD:main", "+main", "develop:main"]],
+    decision = "forbidden",
+    justification = "release through ./scripts/release.sh, never by hand",
+    match = [
+        ["git", "push", "origin", "main"],
+        ["git", "push", "origin", "HEAD:main"],
+    ],
+    not_match = [["git", "push", "origin", "develop"]],
+)
+
+# --- releasing ---------------------------------------------------------------
+# Be clear-eyed about what this grants: it allows every `git push origin main`
+# the script makes, and on a project wired for pull-based deploy it is therefore
+# a standing production-deploy grant. That is the intent — the script's own
+# preconditions are what stands between it and the live server. A session must
+# pass `--yes`, because the retype-the-version prompt reads stdin and
+# `codex exec` has none.
+prefix_rule(
+    pattern = ["./scripts/release.sh"],
+    decision = "allow",
+    justification = "the only route to main; see AGENTS.md 'Cutting a release'",
+)
+
+# --- checks and deploys ------------------------------------------------------
+# Allowing e2e here is necessary but NOT sufficient: it drives the docker socket
+# and binds ports 5273/8273, so it also needs `--sandbox danger-full-access`.
+prefix_rule(pattern = ["./scripts/e2e.sh"], decision = "allow")
+
+prefix_rule(pattern = ["gh", ["run", "workflow"]], decision = "allow")
+
+prefix_rule(pattern = ["ssh", ["pi-deploy", "pi-remote"]], decision = "allow")
+
+# CHANGEME — the one rule to review per project, alongside its twin in
+# `.claude/settings.json`. This is the manual production deploy from AGENTS.md
+# § Deployment; delete it on a project that deploys only through `deploy/` or
+# the self-hosted runner.
+prefix_rule(
+    pattern = ["docker", "--context", "pi-deploy", "compose"],
+    decision = "allow",
+    justification = "manual production deploy; see AGENTS.md § Deployment",
+)
+
+# Health checks. Reaching the public site is the point of the deploy.
+prefix_rule(pattern = ["curl", "-s", "-o", "/dev/null", "-w"], decision = "allow")

@@ -16,8 +16,8 @@
 #
 # RUN IT FROM THE PRIMARY CHECKOUT. It checks out three branches, and a worktree
 # cannot check out a branch the primary checkout already holds — but the real
-# reason is the one in CLAUDE.md: a worktree has no .env, so anything that builds
-# from one ships empty ${VAR} interpolation.
+# reason is the one in AGENTS.md/CLAUDE.md: a worktree has no .env, so anything
+# that builds from one ships empty ${VAR} interpolation.
 #
 # Why a script at all, when it is only six commands: both ways the chain goes
 # wrong are quiet. Merging a feature branch straight to main leaves main with
@@ -57,7 +57,7 @@ run() {
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
 
 if [[ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ]]; then
-  die "run this from the primary checkout, not a worktree (see CLAUDE.md)"
+  die "run this from the primary checkout, not a worktree (see AGENTS.md)"
 fi
 
 [[ -z "$(git status --porcelain)" ]] || die "working tree is dirty — commit or discard first"
@@ -177,4 +177,4 @@ esac
 echo
 echo "Then verify an /api/* route, not just a page — a page returns 200 even when"
 echo "the container cannot reach the backend at all. Codes that are correctly not"
-echo "200 for this app are recorded in CLAUDE.md under 'Health checks'."
+echo "200 for this app are recorded in AGENTS.md under 'Health checks'."

@@ -85,7 +85,7 @@ went unnoticed for days: every `/api` route 502'd while pages stayed 200.
 curl -s -o /dev/null -w '%{http_code}' https://<app>.example.com/api/health
 ```
 
-Record in `CLAUDE.md` every status code that is *correctly* not 200 — a 307 to
+Record in `AGENTS.md`/`CLAUDE.md` every status code that is *correctly* not 200 — a 307 to
 `/login`, a 401 from a basic_auth gate, a 403 on a gated endpoint — so a future
 session does not read a correct response as an outage.
 
@@ -167,7 +167,7 @@ What each step of the agent is for — none of it is decoration:
 Pair it with age-encrypted nightly backups whose **private key is not on the
 Pi** — see [BACKUPS.md](./BACKUPS.md).
 
-Whichever you choose, **write it down in the project's `CLAUDE.md`** — which
+Whichever you choose, **write it down in the project's `AGENTS.md`/`CLAUDE.md`** — which
 model is in use, the compose project name, the data path and the redeploy
 command. That block is the first thing anyone should read before touching
 production, and it is the part that cannot be reconstructed from the code.

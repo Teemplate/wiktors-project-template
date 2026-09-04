@@ -1,0 +1,34 @@
+# Codex, project scope. Claude Code's half of this is `.claude/settings.json`;
+# the policy both of them encode is written out in AGENTS.md § Shipping.
+#
+# ⚠️ THIS FILE IS INERT UNTIL THE PROJECT IS TRUSTED. Codex loads a project's
+# `.codex/config.toml` and `.codex/rules/` only for a trusted project, and it
+# asks once, the first time you run it in a new directory. If you answered no —
+# or you are on another machine, or in a fresh worktree, which is a different
+# path — nothing here runs and nothing in `rules/` applies. There is no warning;
+# you just get the default approval prompts. Fix it in `~/.codex/config.toml`:
+#
+#     [projects."/absolute/path/to/this/checkout"]
+#     trust_level = "trusted"
+#
+# Deliberately NOT here: model, sandbox_mode, network access, approval policy.
+# Those are yours, not the project's, and several of them a project-scoped file
+# is not permitted to override anyway — put them in `~/.codex/config.toml`.
+# AGENTS.md § Your agent lists the two that this project actually needs.
+
+# Re-root a still-empty auto-created branch onto `develop`. The same script the
+# Claude Code hook runs, deliberately: it lives at a neutral path so neither
+# agent's config depends on the other agent's directory existing.
+#
+# `startup` is a fresh session; `resume` is picking an old one back up, where
+# the branch may well have been created since. The script exits 0 and does
+# nothing outside a git repo, on main/develop, or on a branch with commits of
+# its own, so running it more often than strictly needed costs nothing.
+[[hooks.SessionStart]]
+matcher = "^(startup|resume)$"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'bash "$(git rev-parse --show-toplevel)/scripts/hooks/session-start.sh"'
+statusMessage = "checking this branch is based on develop"
+timeout = 30

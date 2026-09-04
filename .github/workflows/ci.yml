@@ -239,3 +239,54 @@ jobs:
 
           [ "$fail" = 0 ] || exit 1
           echo "local/ is ignored as both a directory and a symlink"
+
+  # Two agents, one policy. AGENTS.md (Codex) and CLAUDE.md (Claude Code) are
+  # copies of the same document, and the failure mode of letting them drift is
+  # the quiet one: whoever is using the other tool ships under rules nobody
+  # wrote down for them. Cheaper to fail here than to find out from a release.
+  agents:
+    name: agent instructions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: AGENTS.md and CLAUDE.md are the same document
+        run: |
+          if ! cmp -s AGENTS.md CLAUDE.md; then
+            echo "::error::AGENTS.md and CLAUDE.md have drifted. They must be" \
+                 "byte-identical -- see either file, section 'Your agent'."
+            diff -u CLAUDE.md AGENTS.md || true
+            echo
+            echo "Fix: edit one, then copy it over the other."
+            echo "  cp AGENTS.md CLAUDE.md     # or the reverse"
+            exit 1
+          fi
+          echo "AGENTS.md and CLAUDE.md are identical"
+
+      # The grant files are the half of the policy that is actually enforced, so
+      # a syntax error in one is a session that silently loses its permissions.
+      # (The .rules file is Starlark and needs the Codex binary to parse, which
+      # a hosted runner has no reason to install -- `codex execpolicy check`
+      # covers it locally, and its match/not_match assertions are self-testing.)
+      - name: Agent config parses
+        run: |
+          python3 -c 'import tomllib; tomllib.load(open(".codex/config.toml","rb"))'
+          python3 -c 'import json; json.load(open(".claude/settings.json"))'
+          echo "config parses"
+
+      # Both agents run the SAME hook, from a path that belongs to neither of
+      # them. If someone moves it back under .claude/, Codex silently stops
+      # re-rooting its branches and nobody notices until a feature branch is
+      # built on a stale main.
+      - name: Both agents point at the shared session hook
+        run: |
+          fail=0
+          test -x scripts/hooks/session-start.sh || {
+            echo "::error::scripts/hooks/session-start.sh is missing or not executable"; fail=1; }
+          bash -n scripts/hooks/session-start.sh || fail=1
+          grep -q 'scripts/hooks/session-start.sh' .claude/settings.json || {
+            echo "::error::.claude/settings.json does not run the shared hook"; fail=1; }
+          grep -q 'scripts/hooks/session-start.sh' .codex/config.toml || {
+            echo "::error::.codex/config.toml does not run the shared hook"; fail=1; }
+          [ "$fail" = 0 ] || exit 1
+          echo "both agents run scripts/hooks/session-start.sh"

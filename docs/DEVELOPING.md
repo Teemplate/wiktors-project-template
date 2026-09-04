@@ -1,15 +1,18 @@
 # Developing in this repo
 
 Gitflow, in a git worktree, with the checks green before anything merges.
-`CLAUDE.md` carries the short version every session loads; this is the full
-procedure and the gotchas.
+`AGENTS.md` (and its identical twin `CLAUDE.md`) carries the short version
+every session loads; this is the full procedure and the gotchas.
 
 ## 1. Always develop in a worktree
 
-The primary checkout is shared: the human and any number of parallel Claude
+The primary checkout is shared: the human and any number of parallel agent
 sessions work there, and it usually holds uncommitted WIP that is *not* yours.
-Before the first edit, move into a worktree with **`EnterWorktree`** (a
-dispatched agent gets the same from `Agent`'s `isolation: "worktree"`).
+Before the first edit, move into a worktree. Codex has no tool for this — use
+the `git worktree add` below. Claude Code has **`EnterWorktree`** (a dispatched
+agent gets the same from `Agent`'s `isolation: "worktree"`), which bases the
+worktree on `origin/main`, so it needs `git switch -c feature/<name> develop`
+immediately afterwards.
 
 ```bash
 # after EnterWorktree — do this immediately, before any edit
