@@ -55,6 +55,17 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' \
 lives in *local* worktree branches that were never pushed, so the `-r` form
 misses exactly the case this check exists for.
 
+**`git worktree list` over-reports; the `--no-merged` line is the one that tells
+the truth.** Most worktrees are finished work whose branch is already merged,
+sitting on disk looking active. Reading that list as work in flight goes wrong
+both ways: a stale `feature/*` name invites you to skip something nobody has
+actually built, and the branches that *do* hold unmerged commits are buried
+among them. Settle it with `git rev-list --count develop..<branch>`.
+
+And treat the answer as a **snapshot, not a fact** — another session can commit
+between your check and your release. Run it immediately before you cut, not once
+at the top of the session.
+
 Any of these is a conflict — **stop and ask the human before releasing**:
 
 - another worktree holds uncommitted changes, or a `feature/*` branch is not
