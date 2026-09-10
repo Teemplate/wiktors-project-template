@@ -35,6 +35,36 @@ conflicts. And a release that is not deployed fixes nothing: the live site keeps
 serving the old image, so the deploy is part of finishing, not a separate
 errand.
 
+⚠️ **Before you deploy, check what other sessions have in flight.** Parallel
+sessions — another agent, the human, a background job — share these refs and one
+production target. A release ships whatever is on `develop` *at the moment you
+cut it*: a session that has not merged yet is simply not in it, and two sessions
+releasing minutes apart each ship a snapshot missing the other's work. Neither
+failure announces itself. Look before you cut the release:
+
+```bash
+git worktree list                                        # who else has a checkout
+git fetch origin && git log --oneline -5 origin/develop  # has develop moved under you?
+git branch -r --no-merged origin/develop                 # work that exists, but not in this release
+git worktree list --porcelain | awk '/^worktree /{print $2}' \
+  | while read -r w; do echo "== $w"; git -C "$w" status --short; done
+```
+
+Any of these is a conflict — **stop and ask the human before releasing**:
+
+- another worktree holds uncommitted changes, or a `feature/*` branch is not
+  merged into `develop`;
+- either touches a file you also changed, or anything in
+  `backend/migrations/versions/` — a half-shipped schema change is the
+  expensive one, and two heads fail CI besides;
+- `origin/develop` or `origin/main` has moved since you started: another session
+  may be mid-release.
+
+It is a *git-visible* check on purpose. No session can see another agent's
+running jobs — Claude Code and Codex have no view of each other's — so what is
+committed, branched, or dirty in a worktree is the only shared state both can
+read.
+
 **Ask the human first — these sit outside the standing authorization:**
 
 - **A deploy that is not the release you just cut** — shipping an unreleased
