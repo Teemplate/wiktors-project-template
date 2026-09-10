@@ -44,11 +44,16 @@ failure announces itself. Look before you cut the release:
 
 ```bash
 git worktree list                                        # who else has a checkout
-git fetch origin && git log --oneline -5 origin/develop  # has develop moved under you?
-git branch -r --no-merged origin/develop                 # work that exists, but not in this release
+git fetch origin
+git branch -a --no-merged develop                        # work that exists, but not in this release
+git log --oneline -5 develop origin/develop              # has develop moved under you?
 git worktree list --porcelain | awk '/^worktree /{print $2}' \
   | while read -r w; do echo "== $w"; git -C "$w" status --short; done
 ```
+
+`--no-merged` takes `-a`, not `-r`, and that is the whole point: in-flight work
+lives in *local* worktree branches that were never pushed, so the `-r` form
+misses exactly the case this check exists for.
 
 Any of these is a conflict — **stop and ask the human before releasing**:
 
