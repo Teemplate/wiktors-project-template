@@ -43,9 +43,17 @@ Fill in `## Brief` — in the human's framing, not a paraphrase that smooths the
 words into yours. Leave `## Plan`, `## Questions`, `## Touches` and `## Checks`
 present and empty; the agent fills them.
 
-Commit it on `develop` if the tree is otherwise clean, or just leave it
-untracked and tell the orchestrator the path. Either is fine — the branch does
-not exist yet.
+Commit it on `develop` and push, if the tree is otherwise clean:
+
+```bash
+git add docs/plans/<feature>.md
+git commit -m "docs(plans): brief for <feature>"
+git push origin develop
+```
+
+If the tree is dirty, leave the file untracked and say so — the orchestrator
+commits it before spawning the agent, and must, because the agent's worktree is
+cut from `develop` and cannot see a file that was never committed there.
 
 **This repository is public.** Keep real hostnames, LAN addresses and server
 paths out of the brief; they live in `local/`.

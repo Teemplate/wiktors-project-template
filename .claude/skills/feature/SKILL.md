@@ -41,7 +41,21 @@ merge, choosing whether to run e2e — those are yours.
 2. If `/ideate` already wrote a brief, use it. Otherwise write the plan file
    yourself with full frontmatter, `stage: brief`, and the human's framing in
    `## Brief` — their words, not your paraphrase.
-3. Spawn the agent:
+3. **Commit the brief to `develop` and push it, before you spawn anything:**
+
+   ```bash
+   git add docs/plans/<feature>.md
+   git commit -m "docs(plans): brief for <feature>"
+   git push origin develop
+   ```
+
+   This is not bookkeeping. The agent's worktree is cut from `develop`, so a
+   brief that is only in your working tree simply is not there when the agent
+   goes looking for the path you gave it. Committing first means every branch
+   cut afterwards inherits the file, and `/feature status` can see the feature
+   exists before any branch does.
+
+4. Spawn the agent:
 
    ```
    Agent(
@@ -55,9 +69,32 @@ merge, choosing whether to run e2e — those are yours.
 
    Record the agent's name in the `agent:` field and set `stage: planning`.
 
-4. The agent runs in the background and notifies you when it finishes. **Do not
+5. The agent runs in the background and notifies you when it finishes. **Do not
    fabricate its result.** If the human asks before it lands, say it is still
    running.
+
+## Where the plan file actually lives — read this before writing any check
+
+From the moment the agent creates its branch, **the current version of a plan
+file is on that branch, not on `develop`.** `develop` keeps the brief you
+committed in step 3 and does not see another word until the feature merges. So
+your working tree is the wrong place to look, and every check below reads the
+branch instead:
+
+```bash
+git show feature/<feature>:docs/plans/<feature>.md
+```
+
+Enumerate features from the branches themselves:
+
+```bash
+git for-each-ref --format='%(refname:short)' refs/heads/feature/
+```
+
+Get this wrong and both things it feeds fail *quietly*: `/feature status`
+reports stale stages, and the collision check decides no in-flight branch has a
+plan file — which sends every release back to the old strict answer and blocks
+it. Neither announces itself.
 
 ## The agent came back
 
@@ -79,9 +116,23 @@ approving a plan they have not read is the failure this gate exists to prevent.
 Resume the same agent with `SendMessage`: `Mode: BUILD. The plan is approved.`
 plus any caveats the human attached. Set `stage: building`.
 
-If the agent is gone (session restarted, `agent: none`), spawn a fresh
-`feature-dev` in BUILD mode pointed at the plan file and the existing branch.
-The plan file is the brief; nothing is lost but conversation.
+**If the agent is gone** (session restarted, `agent: none`), spawn a fresh
+`feature-dev` pointed at the plan file and the existing branch. The plan file is
+the brief; nothing is lost but conversation.
+
+One thing first: git will not let two worktrees hold the same branch, so a stale
+worktree from the dead agent blocks the new one silently-looking-like-a-git-error.
+Confirm the branch is pushed, then clear it:
+
+```bash
+git worktree list                                  # is the old one still there?
+git push origin feature/<feature>                  # only if it is behind
+git worktree remove .claude/worktrees/<feature>
+```
+
+Never remove a worktree holding commits that are not pushed. If `git worktree
+remove` refuses, it is telling you exactly that — push from inside it, or bring
+it to the human.
 
 ## Build finished → the deploy gate
 
@@ -122,13 +173,15 @@ For each unmerged branch, `git rev-list --count develop..<branch>` tells you
 whether it holds real commits — `git worktree list` over-reports, since most
 worktrees are finished work. Then, for the branches that do:
 
-- **Has a plan file in `docs/plans/`?** Read its `## Touches`. It is a conflict
-  only if those paths overlap the release's changed files, or if both touch
+- **Has a plan file *on that branch*?** Read it with
+  `git show <branch>:docs/plans/<feature>.md` — not from your working tree,
+  which only has the brief. Compare its `## Touches` against the release's
+  changed files. It is a conflict only if they overlap, or if both touch
   `backend/migrations/versions/`. A parked feature that does not overlap is not
   a conflict — it is the normal steady state of this pipeline, and blocking on
   it would block every release forever.
-- **No plan file?** It is not this pipeline's work, nobody can say what it
-  touches, and the old rule applies: **stop and ask the human.**
+- **No plan file on the branch?** It is not this pipeline's work, nobody can say
+  what it touches, and the old rule applies: **stop and ask the human.**
 
 Also stop and ask if another worktree holds uncommitted changes, or if
 `origin/develop` or `origin/main` moved since you started — another session may
@@ -166,8 +219,12 @@ self-hosted runner, or the manual `docker --context pi-deploy compose` in
 container cannot reach the backend. Check `/api/health`, and check
 `placeholder_secret` while you are there.
 
-**6. Close out.** Set `stage: shipped`, delete the feature branch, remove the
-worktree, and tell the human the version, what shipped and the health result.
+**6. Close out.** The merge brought the plan file onto `develop`, so set
+`stage: shipped` there and commit it directly — this is the one place the
+pipeline commits to `develop` outside a merge, because by now the branch and
+worktree are gone and there is nowhere else to put it. Then remove the worktree,
+delete the branch, and tell the human the version, what shipped, and the health
+result.
 
 ## Park a feature
 
@@ -182,15 +239,25 @@ Rebuild the picture from disk and git, never from memory — your context may ha
 been summarized:
 
 ```bash
-head -12 docs/plans/*.md                  # frontmatter of every feature
+git for-each-ref --format='%(refname:short)' refs/heads/feature/   # in flight
+head -12 docs/plans/*.md                                           # briefs + shipped
 git worktree list
-git branch --no-merged develop
 git log --oneline -3 develop
 ```
 
+Then, for each feature branch, read the **branch's** copy — the working-tree
+file is the stale brief:
+
+```bash
+git show <branch>:docs/plans/<feature>.md | head -12
+```
+
 Print one line per feature: name, stage, branch, and whether an agent is still
-attached. Flag any feature whose `stage` says `building` but whose `agent:` is
-`none` — that one needs a fresh agent, and nothing else will notice.
+attached. Two things to flag, because nothing else will notice them:
+
+- `stage: building` with `agent: none` — needs a fresh agent at that plan file.
+- a plan file on `develop` still at `stage: brief` with no matching branch — an
+  idea that was written down and never handed to an agent.
 
 ## Several features at once
 

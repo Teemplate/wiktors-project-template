@@ -328,6 +328,13 @@ are the ground truth; `/feature status` rebuilds the whole picture from them,
 and an agent that has gone away is replaced by spawning a fresh one at the same
 plan file. Losing the conversation costs context, never work.
 
+One consequence worth knowing before you write any check against it: while a
+feature is in flight, **its plan file is current on its branch, not on
+`develop`.** `develop` holds only the brief until the feature merges, so a check
+reading the working tree sees `stage: brief` and an empty `## Touches` — which
+looks like a feature that has not started rather than a bug. Read the branch's
+copy: `git show feature/<name>:docs/plans/<name>.md`.
+
 Several features can be in flight at once — the architecture is identical, since
 nothing is held in an agent's head. What serializes is the human (one chat
 channel) and the release (one production target), so two or three concurrent

@@ -2,9 +2,10 @@
 
 Every feature that goes through the agentic pipeline
 ([§ Agentic pipeline](../../CLAUDE.md)) gets exactly one file here, named
-`<feature>.md`. It is written by `/ideate` or by the feature agent, read by the
-orchestrator, committed on the feature branch, and merged into `develop` with
-the code.
+`<feature>.md`. The brief is committed to `develop` before the agent is
+spawned — so the worktree cut from `develop` actually has it — and from then on
+the agent updates it **on the feature branch**, where it merges back with the
+code.
 
 **It is tracked on purpose.** The plan travels with the branch, shows up in the
 merge diff, and — the part that matters — survives everything the conversation
@@ -33,6 +34,24 @@ opened: 2026-09-12
 
 Every field is required; write `n/a` or `none` rather than omitting one, so a
 missing field always means the file is malformed rather than merely quiet.
+`worktree:` is a repo-relative path while the worktree exists, `none` before one
+is created, and `removed` after it is cleaned up — those three, nothing else.
+
+### Which copy is the real one
+
+**While a feature is in flight, the live version of its plan file is on its
+branch.** `develop` holds the brief the orchestrator committed before spawning
+the agent, and sees nothing more until the feature merges. So anything reading a
+plan file for an active feature reads it from the branch:
+
+```bash
+git show feature/<feature>:docs/plans/<feature>.md
+```
+
+Reading the working-tree copy instead gets a stale `stage: brief` and an empty
+`## Touches` — which looks like a feature that has not started rather than an
+error, and is why `/feature status` and the collision check both go through
+`git show`.
 
 ### `stage` — the state machine
 
