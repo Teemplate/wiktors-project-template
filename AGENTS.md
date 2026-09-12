@@ -35,6 +35,13 @@ conflicts. And a release that is not deployed fixes nothing: the live site keeps
 serving the old image, so the deploy is part of finishing, not a separate
 errand.
 
+**Inside the agentic pipeline, the human's approval message is the gate** — and
+the only one. That pipeline (§ Agentic pipeline) adds two approvals this table
+does not have: a `feature-dev` agent stops after planning, and stops again at
+the pushed branch. That is not a contradiction of the row above. Once the human
+says `deploy`, every line of this table applies as written and the orchestrator
+ships — merge, release, production — without coming back with questions.
+
 ⚠️ **Before you deploy, check what other sessions have in flight.** Parallel
 sessions — another agent, the human, a background job — share these refs and one
 production target. A release ships whatever is on `develop` *at the moment you
@@ -68,13 +75,24 @@ at the top of the session.
 
 Any of these is a conflict — **stop and ask the human before releasing**:
 
-- another worktree holds uncommitted changes, or a `feature/*` branch is not
-  merged into `develop`;
-- either touches a file you also changed, or anything in
-  `backend/migrations/versions/` — a half-shipped schema change is the
-  expensive one, and two heads fail CI besides;
+- another worktree holds uncommitted changes;
+- an unmerged `feature/*` branch has **no plan file** in `docs/plans/` — it is
+  not this pipeline's work, so nothing records what it touches and the strict
+  answer is the only safe one;
+- an unmerged branch that *does* have a plan file lists, in its `## Touches`, a
+  path this release also changes — or anything in
+  `backend/migrations/versions/` while this release touches that too. A
+  half-shipped schema change is the expensive one, and two heads fail CI
+  besides;
 - `origin/develop` or `origin/main` has moved since you started: another session
   may be mid-release.
+
+**An unmerged branch used to be a conflict on its own.** That was right when
+unmerged branches were rare. Under § Agentic pipeline a parked feature is a
+normal steady state, and the old rule would block every release forever — so the
+check narrowed to overlap, and `docs/plans/<feature>.md` with its `## Touches`
+list is what it reads. A branch with no plan file is unchanged by this: it still
+stops the release.
 
 It is a *git-visible* check on purpose. No session can see another agent's
 running jobs — Claude Code and Codex have no view of each other's — so what is
@@ -270,6 +288,51 @@ Worktrees share refs, objects, tags, config **and the stash** — never use bare
 WIP commit instead.
 
 Full procedure: **[docs/DEVELOPING.md](./docs/DEVELOPING.md)**.
+
+## Agentic pipeline — Claude Code only
+
+The workflow above, driven by agents instead of by hand. **Claude Code only**:
+Codex has no `Agent` tool, no worktree tool and no `SendMessage`, so a Codex
+session ignores this section and follows § Development workflow directly.
+
+| piece | where |
+|---|---|
+| orchestrator — the session the human types into | `.claude/skills/feature/` → `/feature` |
+| feature agent — one per feature, in its own worktree | `.claude/agents/feature-dev.md` |
+| front door for half-formed ideas (optional) | `.claude/skills/ideate/` → `/ideate` |
+| per-feature state, tracked | `docs/plans/<feature>.md`; contract in [docs/plans/README.md](./docs/plans/README.md) |
+
+**The split of labour is forced by this repo, not chosen.** `develop` is checked
+out in the primary checkout and git will not let a worktree hold it too; a
+worktree has no `.env`, so anything built or deployed from one ships empty
+`${VAR}`. So the agent commits and pushes `feature/<name>`, and the orchestrator
+— which runs in the primary checkout — merges, releases and deploys. Nothing
+else would work.
+
+Two gates, both the human's, and they are the human's *only* moves:
+
+1. **plan approval.** The agent drafts the plan into its plan file and stops.
+   For frontend work it also produces a Claude Design canvas, reviewed as part
+   of this same gate rather than a separate one. The orchestrator prints the
+   plan in chat; the human approves, asks for a replan, or stops.
+2. **deploy approval.** The agent implements, runs the checks, pushes the
+   branch, and stops — it never merges, releases or deploys. The human's
+   `deploy` then covers merge → staging → release → production as one motion.
+
+Everything before, between and after those two runs under § Shipping's standing
+authorization.
+
+**State lives in files, never in a conversation.** A long session gets
+summarized and agent names are session-scoped, so the plan file and the git refs
+are the ground truth; `/feature status` rebuilds the whole picture from them,
+and an agent that has gone away is replaced by spawning a fresh one at the same
+plan file. Losing the conversation costs context, never work.
+
+Several features can be in flight at once — the architecture is identical, since
+nothing is held in an agent's head. What serializes is the human (one chat
+channel) and the release (one production target), so two or three concurrent
+features is the practical ceiling, and the orchestrator's accumulating context
+is what binds first.
 
 ## Deployment
 
