@@ -75,3 +75,13 @@ And the check that actually proves it works, end to end:
 A fresh clone with **no real secrets** must build, typecheck, pass every test
 and pass the e2e suite. If something appears to need a credential to develop,
 that is a design problem.
+
+## Agent-context maintenance
+
+`AGENTS.md` and `CLAUDE.md` are mirrored entry points. Run
+`python3 scripts/check_agent_context.py` before committing; CI checks parity,
+a 28 KiB size budget, tracked references, configuration and duplicate hooks.
+Run `python3 scripts/tests/test_agent_context.py` after changing the checker.
+Use `--check-rules` with the checker to verify the declared Codex command policy.
+The initializer fills `.agent-context.json` for each new app. The separate
+`project-template` repository is superseded; use this repository for new apps.
