@@ -115,7 +115,7 @@ fi
 # --- guard: never rewrite the template itself ------------------------------
 # A clone lives in a directory named after the new project; the template lives
 # in one named project-template. That is the difference this checks.
-if [ "$(basename "$REPO")" = "project-template" ]; then
+if [ "$(basename "$REPO")" = "project-template" ] || [ "$(basename "$REPO")" = "wiktors-project-template" ]; then
   cat >&2 <<MSG
 Refusing to run: this directory is called "project-template", so it is almost
 certainly the template itself rather than a copy of it. Running here would
@@ -166,7 +166,7 @@ fi
 # its real clone URL, so substituting there would leave broken instructions.
 echo "→ replacing placeholders"
 APP="$APP" python3 - <<'PY'
-import os, pathlib
+import json, os, pathlib
 
 app = os.environ["APP"]
 skip_dirs = {".git", "node_modules", "dist", ".venv", "__pycache__", "playwright-report", "test-results",
@@ -179,9 +179,10 @@ skip_dirs = {".git", "node_modules", "dist", ".venv", "__pycache__", "playwright
 # line -- observed as "line 157: MSG: No such file or directory" from a heredoc
 # that was fine. SETUP.md is excluded because it documents the template and
 # cites its real clone URL; substituting there leaves broken instructions.
-skip_files = {"SETUP.md", "init-project.sh"}
+skip_files = {"SETUP.md", "init-project.sh", "check_agent_context.py", "test_agent_context.py"}
 # Longest first: CHANGEME-app-label must not be eaten by CHANGEME-app.
 subs = [
+    ("<App name>", app),
     ("CHANGEME-app-label", f"{app}-runner"),
     ("CHANGEME-app", app),
     ("CHANGEME", app),
@@ -204,6 +205,12 @@ for path in pathlib.Path(".").rglob("*"):
     if new != text:
         path.write_text(new, encoding="utf-8")
         changed.append(str(path))
+
+manifest_path = pathlib.Path(".agent-context.json")
+if manifest_path.exists():
+    manifest = json.loads(manifest_path.read_text())
+    manifest.update(project=app, is_template=False, development_base="develop")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 for p in sorted(changed):
     print(f"    {p}")
@@ -258,6 +265,7 @@ echo "→ wrote a README for ${APP}"
 # --- 3. new history --------------------------------------------------------
 git init -q -b main
 git add -A
+python3 scripts/check_agent_context.py
 git -c user.email="$(git config --global user.email || echo dev@localhost)" \
     -c user.name="$(git config --global user.name || echo dev)" \
     commit -q -m "chore: initial commit from project-template

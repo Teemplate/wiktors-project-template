@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "project": "wiktors-project-template",
+  "development_base": "develop",
+  "is_template": true,
+  "required_files": [
+    ".claude/settings.json",
+    ".codex/config.toml",
+    ".codex/rules/shipping.rules",
+    "scripts/hooks/session-start.sh"
+  ],
+  "optional_private_paths": [
+    "local/infrastructure.md",
+    "local/deployments.md"
+  ],
+  "rule_checks": [
+    {
+      "file": ".codex/rules/shipping.rules",
+      "command": [
+        "git",
+        "push",
+        "origin",
+        "main"
+      ],
+      "decision": "forbidden"
+    }
+  ]
+}

@@ -13,7 +13,9 @@
 
 Vite/React (TypeScript) frontend + FastAPI (async SQLAlchemy, Postgres) backend,
 deployed as a Docker Compose stack on the **Raspberry Pi 5** behind the shared
-Caddy and a Cloudflare Tunnel. Live at **https://CHANGEME.example.com**.
+Caddy and a Cloudflare Tunnel when configured. This template does not
+represent a live deployment. Set a real `PUBLIC_HOST` and record the adopted
+deployment model when creating an application.
 
 ## Shipping — what a session may do without asking
 
@@ -112,15 +114,12 @@ read.
   `.env` is read locally, so a worktree ships empty `${VAR}` interpolation and
   code that is not on `develop`/`main` yet.
 
-**This file cannot grant any of the above.** Project instructions override an
-agent's default behaviour, not its permission layer — and the file that actually
-lets these commands run is a different one for each agent:
-`.claude/settings.json` for Claude Code, `.codex/rules/shipping.rules` for
-Codex. If a push or a deploy is refused, those are where to look, not here. Both
-ship with this template already populated, carrying the same policy in each
-tool's own syntax; the one thing to change per project is the deploy command in
-them. Which one is yours, and the way each can be silently inert:
-[§ Your agent](#your-agent--claude-code-or-codex).
+**Instructions and tool permissions are separate.** These project rules apply
+to both agents. `.claude/settings.json`, where present, configures Claude Code
+only; it does not configure Codex. Codex uses its effective user configuration
+and any trusted project `.codex/` configuration and rules. Check the active
+agent's permissions when a command is refused; do not infer a grant from the
+other agent's settings or invent a settings file.
 
 ⚠️ **Production refuses an unsigned tag.** `deploy/app-deploy` sets
 `REQUIRE_SIGNED_TAG=1` for `prod`: an unsigned tag is not deployed and
@@ -292,8 +291,9 @@ Full procedure: **[docs/DEVELOPING.md](./docs/DEVELOPING.md)**.
 ## Agentic pipeline — Claude Code only
 
 The workflow above, driven by agents instead of by hand. **Claude Code only**:
-Codex has no `Agent` tool, no worktree tool and no `SendMessage`, so a Codex
-session ignores this section and follows § Development workflow directly.
+these Claude-specific skill and persona files do not configure Codex.
+A Codex session follows § Development workflow; available delegation tools
+depend on its environment, not on the presence of `.claude/` files.
 
 | piece | where |
 |---|---|
@@ -437,28 +437,17 @@ container cannot reach the backend at all. Record here any status code that is
 basic_auth gate — so a future session does not read a correct response as an
 outage.
 
-## Your own infrastructure — `local/`
+## Your own infrastructure — optional `local/` notes
 
-The docs in this repo are generic on purpose (`example.com`, `<pi-lan-ip>`,
-`<your-org>`) because **this repository is public**. The real hostnames, LAN
-address, SSH aliases, server paths and app inventory live in **`local/`**, which
-is gitignored.
+`local/infrastructure.md` and `local/deployments.md`, when present, contain
+private machine-specific details. They are gitignored and may be absent in a
+fresh clone or worktree. Never commit them or copy secrets into agent guides.
 
-**Read `local/infrastructure.md` before answering anything about where this
-deploys** — the domain and addresses in the tracked docs are placeholders, and
-acting on them will point at somebody else's example.com. `local/deployments.md`
-records what is actually live.
-
-`local/` is gitignored, so like `.env` it does **not exist in a fresh worktree**.
-Symlink it when a session needs it:
-
-```bash
-ln -s ../../../local local
-```
-
-Never move a file out of `local/` to make it visible, and never `git add -f` it.
-CI fails the build if anything under `local/` is tracked. The tracked template is
-`local.example/`.
+Use this guide and [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for the tracked
+deployment procedure. `local.example/` shows the optional notes format. If the
+actual target or deployment state is not documented, establish it before any
+production action; an example hostname is not evidence of a live deployment.
+For local development, the tracked setup and example configuration are enough.
 
 ## Secrets
 
@@ -468,3 +457,22 @@ tests — if something appears to need a credential to develop, that is the wron
 approach. `SECRET_KEY` must be a real value in production;
 `/api/health` reports `placeholder_secret: true` if the dev default is still in
 place, and the deploy workflow raises a warning on it.
+
+## Maintaining agent context
+
+Development base: `develop`.
+
+`AGENTS.md` and `CLAUDE.md` are tracked, byte-identical entry points for Codex
+and Claude Code. Edit either, then copy it to the other. Keep each below 28 KiB;
+put detailed reference material in linked files. Fresh clones must have all
+required public context without machine-specific notes or credentials.
+
+Run `python3 scripts/check_agent_context.py` before finishing instruction or
+configuration changes; the same check runs in `.github/workflows/agent-context.yml`.
+`.agent-context.json` records the development base and required reference files.
+If this project has Codex command rules, also run the checker with `--check-rules`.
+
+Codex can create an isolated checkout with `git worktree add`; Claude Code may
+also expose `EnterWorktree`. Use the development base above and preserve other
+sessions' work. Gitignored credentials and dependencies are absent in fresh
+worktrees. A parent folder's guide is not a substitute for this repo's own guide.
