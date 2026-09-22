@@ -288,6 +288,21 @@ WIP commit instead.
 
 Full procedure: **[docs/DEVELOPING.md](./docs/DEVELOPING.md)**.
 
+## Model routing — spend capability at the decision points
+
+Gitflow controls the branch; **[docs/MODEL-ROUTING.md](./docs/MODEL-ROUTING.md)**
+controls the default Codex model by phase. Use Astra to plan complex work,
+Terra for routine implementation, deterministic checks as the gate, and
+Sol or Astra to diagnose difficult failures and review high-risk changes.
+Luna is limited to tightly specified mechanical work. Small, low-risk changes
+may stay on Terra end to end.
+
+Run routed stages serially: one writing agent owns a feature worktree at a
+time, and hands off through the plan file, diff and check output. The user's
+explicit model choice wins; if a named model is unavailable, use the closest
+capability tier and record the substitution. Keep `.codex/config.toml`
+model-neutral so account-level choices remain portable.
+
 ## Agentic pipeline — Claude Code only
 
 The workflow above, driven by agents instead of by hand. **Claude Code only**:
