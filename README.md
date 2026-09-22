@@ -50,6 +50,7 @@ what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 | `AGENTS.md`, `CLAUDE.md` | What an agent session must read before writing code. Byte-identical copies — Codex reads the first, Claude Code the second, and CI fails if they drift |
 | `.codex/`, `.claude/` | The shipping policy in each agent's own syntax: `rules/shipping.rules` and `settings.json`. Prose alone grants nothing; these are the files that do |
 | `docs/DEVELOPING.md` | Gitflow + worktrees, the checks, schema changes, and the gotchas |
+| `docs/MODEL-ROUTING.md` | Cost-aware Codex routing: Astra plans and reviews risk, Terra builds, checks trigger escalation |
 | `docs/INFRASTRUCTURE.md` | **Start here if you have no server yet** — Pi, Cloudflare Tunnel, shared Caddy, SSH, signing keys |
 | `docs/DEPLOYMENT.md` | The Pi pattern, both deploy models, plus static-site variants |
 | `docs/BACKUPS.md` | Encrypted backups and — the part everyone skips — a *verified* restore |

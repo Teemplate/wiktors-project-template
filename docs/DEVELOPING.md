@@ -4,6 +4,12 @@ Gitflow, in a git worktree, with the checks green before anything merges.
 `AGENTS.md` (and its identical twin `CLAUDE.md`) carries the short version
 every session loads; this is the full procedure and the gotchas.
 
+Gitflow is paired with **[model routing](./MODEL-ROUTING.md)**. For substantial
+Codex features, Astra plans, Terra implements, the checks provide evidence,
+and Sol or Astra handles failures that need stronger diagnosis. These stages
+run serially in the same feature worktree and exchange state through the plan,
+diff and check results. A tiny, low-risk change can remain on Terra throughout.
+
 ## 1. Always develop in a worktree
 
 The primary checkout is shared: the human and any number of parallel agent
