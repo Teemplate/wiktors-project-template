@@ -1,5 +1,5 @@
-# Multi-stage. `target: dev` is used by docker-compose.yml, `target: prod` by
-# compose.deploy.yml.
+# Multi-stage. `target: dev` is used by compose/web.dev.yml, `target: prod` by
+# compose/web.deploy.yml and compose/web.e2e.yml.
 
 # ---------- deps ----------
 FROM node:22-alpine AS deps
@@ -30,15 +30,16 @@ RUN npm run build
 # ---------- prod ----------
 FROM nginx:alpine AS prod
 COPY --from=build /app/dist /usr/share/nginx/html
-# SPA fallback + asset caching + the /api proxy. Kept as a file rather than an
-# inline printf so it stays readable and can be edited without touching the
-# Dockerfile.
+# SPA fallback + asset caching, plus the /api proxy snippet when the project has
+# the api block. Kept as files rather than an inline printf so they stay
+# readable and can be edited without touching the Dockerfile.
 #
 # Dropped into /etc/nginx/templates so the official image's entrypoint runs
-# envsubst over it at start-up and fills in ${BACKEND_HOST}. That keeps the
-# backend's container name -- which depends on the compose project name -- out
-# of the image, so the same image works for dev, e2e, staging and production.
-COPY nginx.conf /etc/nginx/templates/default.conf.template
+# envsubst over them at start-up (subdirectories included) and fills in
+# ${BACKEND_HOST}. That keeps the backend's container name -- which depends on
+# the compose project name -- out of the image, so the same image works for
+# dev, e2e, staging and production.
+COPY nginx/ /etc/nginx/templates/
 ENV BACKEND_HOST=backend
 ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
 # WITHOUT this filter, envsubst would also eat nginx's own runtime variables --

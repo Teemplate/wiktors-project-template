@@ -1,0 +1,31 @@
+server {
+  listen 5173;
+  root /usr/share/nginx/html;
+
+  # The /api proxy, when this project has the api block: a separate snippet
+  # (snippets/api-proxy.conf.template) so a web-only project simply does not
+  # have the file. The glob matches nothing then, which nginx accepts.
+  include /etc/nginx/conf.d/snippets/*.conf;
+
+  # Hashed build assets: if one is missing it must 404, NOT fall through to
+  # index.html. The fallback below would otherwise serve HTML for a missing
+  # .js file, and the browser reports it as an opaque MIME-type error instead
+  # of the 404 it actually is.
+  location /assets/ {
+    try_files $uri =404;
+    # Filenames are content-hashed by Vite, so they can be cached forever.
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+  }
+
+  # index.html itself must never be cached, or clients keep loading the old
+  # bundle after a deploy.
+  location = /index.html {
+    add_header Cache-Control "no-cache";
+  }
+
+  # SPA fallback: unknown paths are client-side routes.
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

@@ -1,0 +1,15 @@
+# Block: web — local development: the Vite dev server with hot reload.
+# Included by the root docker-compose.yml, which scripts/blocks.py generates.
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    env_file: .env
+    ports:
+      - "${DEV_WEB_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src:z
+      # Anonymous volume keeps the container's own node_modules — without it the
+      # host mount would shadow the install done in the image.
+      - /app/node_modules

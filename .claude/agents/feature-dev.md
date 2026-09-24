@@ -52,9 +52,11 @@ cannot safely do it from inside your own.
 ```bash
 ln -s ../../../local local                                   # real hostnames + paths
 ln -s ../../../.env .env                                     # only if the task needs it
-ln -s ../../../../frontend/node_modules frontend/node_modules
-ln -s ../../../../backend/.venv backend/.venv
+ln -s ../../../../frontend/node_modules frontend/node_modules   # web block
+ln -s ../../../../backend/.venv backend/.venv                   # api/worker/postgres
 ```
+
+Symlink only what exists: `blocks.json` says which blocks this project has.
 
 Those depths assume the worktree sits at `.claude/worktrees/<name>/`. Check with
 `ls -l` that each link resolves before you rely on it; a broken symlink fails
@@ -106,19 +108,20 @@ You are here because the human approved the plan. Implement it.
   something does not exist, an approach does not work — stop, write what you
   found into `## Questions`, set `stage: awaiting-answers`, and hand back.
   Quietly building something other than what was approved defeats the gate.
+<!-- block:postgres -->
 - **Schema changes go through Alembic**, never `create_all()`. Autogenerate,
   read the generated file, and update `app/seed.py` in the same commit. CI
   enforces one migration head and a clean up-and-down.
-- **Run the checks and record them** in `## Checks` with today's date:
+<!-- /block -->
+- **Run the checks and record them** in `## Checks` with today's date — the
+  lines `python3 scripts/blocks.py checks` prints for this project's blocks,
+  plus `python3 scripts/blocks.py check`.
 
-  ```bash
-  cd backend  && pytest
-  cd frontend && npm run typecheck     # never `next lint` — it prompts
-  cd frontend && npm test
-  ```
-
-  Add `./scripts/e2e.sh` when the change touches the API surface, `nginx.conf`,
-  a migration, or `app/seed.py`.
+  Add `./scripts/e2e.sh` when the change touches the API surface,
+  `frontend/nginx/`, a compose fragment, a migration, or `app/seed.py`.
+- **A change that needs another block** — a site that now wants an API — is a
+  plan question, not an implementation detail: adding it is
+  `python3 scripts/blocks.py add`, see `docs/BLOCKS.md`.
 - **Commit conventionally** (`feat(scope): …`, `fix(scope): …`), then
   `git push origin feature/<name>`.
 

@@ -1,0 +1,27 @@
+# Block: postgres — e2e. Data lives in tmpfs: nothing survives the run, which is
+# the point — a test that depends on yesterday's state fails on a Tuesday for no
+# reason. `migrate` must exit zero before anything that uses the database starts.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: e2e-not-a-secret
+      POSTGRES_DB: e2e
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2e -d e2e"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: ./backend
+    image: ${E2E_PROJECT:-app}-e2e-backend:latest
+    command: ["alembic", "upgrade", "head"]
+    env_file: [.env.e2e]
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"

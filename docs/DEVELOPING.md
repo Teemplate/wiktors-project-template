@@ -4,6 +4,12 @@ Gitflow, in a git worktree, with the checks green before anything merges.
 `AGENTS.md` (and its identical twin `CLAUDE.md`) carries the short version
 every session loads; this is the full procedure and the gotchas.
 
+Gitflow is paired with **[model routing](./MODEL-ROUTING.md)**. For substantial
+Codex features, Astra plans, Terra implements, the checks provide evidence,
+and Sol or Astra handles failures that need stronger diagnosis. These stages
+run serially in the same feature worktree and exchange state through the plan,
+diff and check results. A tiny, low-risk change can remain on Terra throughout.
+
 ## 1. Always develop in a worktree
 
 The primary checkout is shared: the human and any number of parallel agent
@@ -114,15 +120,21 @@ git push origin main develop --tags
 
 ## 4. Checks
 
-**Before every merge** — all fast, none needs a secret:
+**Before every merge** — all fast, none needs a secret. Run the lines for the
+blocks this project has (`python3 scripts/blocks.py checks` prints exactly
+those):
 
 ```bash
-cd backend  && pytest                # needs no database and no secrets
-cd frontend && npm run typecheck     # tsc --noEmit
-cd frontend && npm test              # vitest unit tests
-cd frontend && npm run build         # catches what typecheck alone does not
-docker compose -f compose.deploy.yml config --quiet
+cd backend  && pytest                # api / worker / postgres — no database, no secrets
+cd frontend && npm run typecheck     # web — tsc --noEmit
+cd frontend && npm test              # web — vitest unit tests
+cd frontend && npm run build         # web — catches what typecheck alone does not
+python3 scripts/blocks.py check      # blocks.json, the files and the compose agree
 ```
+
+Changed a compose fragment (`frontend/compose/`, `backend/compose/`)? Run
+`python3 scripts/blocks.py sync` to regenerate the root files — they are
+`include:` lists, never edited by hand — and see [BLOCKS.md](./BLOCKS.md).
 
 **Before merging anything that touches the API surface, nginx, a migration or
 the seed** — the full stack, for real:
@@ -133,14 +145,12 @@ the seed** — the full stack, for real:
 ./scripts/e2e.sh --ui       # Playwright UI mode
 ```
 
-It stands up a disposable stack on ports 5273/8273 (override with
-`E2E_WEB_PORT`/`E2E_API_PORT`), with Postgres on **tmpfs** so nothing survives
-the run. It **refuses to start the browser tests unless the seed produced
-rows** — against an empty list every UI assertion passes vacuously.
-
-**Never run `next lint`** on a Next.js variant of this template — it prompts
-interactively and will hang a CI runner or an agent session. Use `eslint`
-directly.
+It stands up a disposable stack of this project's blocks on ports 5273/8273
+(override with `E2E_WEB_PORT`/`E2E_API_PORT`), with Postgres on **tmpfs** so
+nothing survives the run. With `postgres` it **refuses to start the browser
+tests unless the seed produced rows** — against an empty list every UI
+assertion passes vacuously. With `worker` it waits for a healthy heartbeat.
+Without `web` the stack checks are the whole suite.
 
 CI runs the fast checks on every push and PR. The e2e suite runs nightly, on
 demand, and on any PR labelled `run-e2e` — it is deliberately not a required
@@ -153,6 +163,8 @@ The schema is owned by Alembic. Never create tables with
 `Base.metadata.create_all()` — migrations and reality drift permanently apart
 the first time you do.
 
+These apply to projects with the **postgres** block.
+
 ```bash
 cd backend
 alembic revision --autogenerate -m "add the thing"   # review the file it writes
@@ -160,6 +172,9 @@ alembic upgrade head
 alembic downgrade base && alembic upgrade head       # prove it round-trips
 python -m app.seed                                   # keep the seed in step
 ```
+
+With the dev stack up, `docker compose up migrate` applies a new revision and
+`docker compose run --rm migrate python -m app.seed` seeds.
 
 Three things CI enforces, each of which has cost real time in production:
 
@@ -184,7 +199,9 @@ yet. Deploy from the primary checkout, on `main`, always.
 
 ## 6. Adding a dependency
 
-- **Backend:** add to `requirements.txt` **pinned to an exact version**. An open
+- **Backend:** add to `requirements.txt` **pinned to an exact version**, inside
+  the `# block:` section of the block that needs it, so it leaves with that
+  block. An open
   range once resolved to a breaking 2.0.0 release on a fresh Pi install while the
   dev machine stayed on an old cached 1.x — the failure appeared only in
   production.

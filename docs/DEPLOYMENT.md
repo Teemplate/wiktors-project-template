@@ -1,7 +1,14 @@
 # Deployment
 
-Production is a Docker Compose stack on the **Raspberry Pi 5**, behind one
-shared Caddy and a Cloudflare Tunnel.
+Where a project runs is its **target** (`blocks.json`, [BLOCKS.md](./BLOCKS.md)):
+
+- **`pi-compose`** — a Docker Compose stack on the **Raspberry Pi 5**, behind
+  one shared Caddy and a Cloudflare Tunnel. Most of this document.
+- **`pages`** — a `web`-only static site on GitHub Pages. See
+  [GitHub Pages](#github-pages); nothing else here applies to it.
+
+The Pi needs Docker Compose **2.20 or newer**: the root compose files are
+`include:` lists of each block's fragments.
 
 > This document assumes that server already exists. To build it from scratch —
 > OS, Docker, the `web` network, the tunnel, Caddy, SSH and signing keys — see
@@ -16,14 +23,16 @@ traffic arrives through the tunnel. Three rules follow, and each is load-bearing
 1. **Apps publish no ports and run no Caddy of their own.** They join the
    external Docker network `web` so the shared Caddy can reach them by container
    name.
-2. **Caddy blocks are written `http://`**, not `https://`:
+2. **Caddy blocks are written `http://`**, not `https://`, and point at the
+   project's public block — `web` if it has one, else `api`:
    ```
    http://<app>.example.com {
-       reverse_proxy <app>-frontend:5173
+       reverse_proxy <app>-frontend:5173    # or <app>-backend:8000 without web
    }
    ```
    Cloudflare terminates TLS at its edge, and Caddy has no public port on which
-   to complete an ACME challenge. Writing `https://` breaks it.
+   to complete an ACME challenge. Writing `https://` breaks it. A `worker`-only
+   project serves nothing and needs no Caddy block or DNS record.
 3. **Persistent data bind-mounts from `/mnt/ssd/apps/<app>/`**, never baked into
    an image — so a code-only redeploy never touches data.
 
@@ -69,7 +78,7 @@ docker --context pi-deploy compose -f compose.deploy.yml -p <app> up -d --build
 2. **DNS record first**, and confirm it resolves.
 3. **Caddy block** in `/srv/caddy/Caddyfile`, then reload Caddy.
 4. Deploy.
-5. Verify an `/api/*` route.
+5. Verify an `/api/*` route (or, without the api block, the page).
 
 > Doing DNS and Caddy *after* the first deploy makes the deploy's edge health
 > check fail even though the build and containers are fine — it just cannot
@@ -140,7 +149,9 @@ uncommitted code" mistakes, because a human never runs the deploy at all.
 Set up, on the Pi:
 
 ```bash
-# 1. Edit deploy/app-deploy: APP, DOMAIN, STAGING_DOMAIN, DATA_ROUTE
+# 1. Edit deploy/app-deploy: APP, DOMAIN, STAGING_DOMAIN, DATA_ROUTE.
+#    BLOCKS is written by scripts/blocks.py; re-run install-agent.sh after
+#    adding or removing a block so the installed copy learns it.
 # 2. On the Pi:
 mkdir -p /mnt/ssd/apps/<app>/{env,state,backups}
 install -m 600 /dev/stdin /mnt/ssd/apps/<app>/env/app.env   # paste the real .env
@@ -156,10 +167,12 @@ What each step of the agent is for — none of it is decoration:
 | disk check | refuses to build under 5 GB free, rather than filling the SSD and taking every app down |
 | **tag `:rollback` *before* the build** | `compose build` overwrites `:latest`, so capturing "previous" afterwards captures the **new** image and rollback silently becomes a no-op |
 | build before touching containers | a build failure then costs nothing: old version still serving |
-| `pg_dump` + size sanity check | never run migrations without a backup, and a 200-byte dump is not a backup |
+| `pg_dump` + size sanity check (`postgres`) | never run migrations without a backup, and a 200-byte dump is not a backup |
 | `migrate` one-shot service | a bad revision aborts with the old containers still up |
-| health: `/api/health` **and** a data route | health answers `ok` while every data route is broken |
-| health: the frontend's `/api` proxy | if the SPA fallback swallows `/api/*` the site looks fine and is entirely broken |
+| health: `/api/health` **and** a data route (`api`) | health answers `ok` while every data route is broken |
+| health: the frontend's `/api` proxy (`web`+`api`) | if the SPA fallback swallows `/api/*` the site looks fine and is entirely broken |
+| health: the worker's heartbeat (`worker`) | a worker has no port; a stuck one is running but not ticking, and only the heartbeat shows it |
+| only the blocks in its own `BLOCKS=` | the installed agent decides what to check; a merge cannot quietly change that |
 | edge check accepts 200/301/302/401 | behind Access or basic_auth those *are* success; only a dead origin gives 502 |
 | rollback **verifies itself** | a rollback that silently does nothing is worse than none — it leaves broken code live under a green log line |
 | rollback does **not** restore the DB | a `pg_restore` racing live traffic is worse than a human reading the dump; that call is not the agent's to make |
@@ -174,14 +187,45 @@ production, and it is the part that cannot be reconstructed from the code.
 
 ---
 
-## Static-site variants
+## Why a session runs the release
 
-This template is the compose/Pi archetype. Two lighter ones are in use here.
+`./scripts/release.sh` is run by agent sessions themselves, under the standing
+authorization in AGENTS.md / CLAUDE.md § Shipping.
 
-### GitHub Pages
+That guide used to say the opposite: that a session "cannot run this, and
+cannot `git push origin main`", because of a blanket harness rule quoted as
+*"never push to main/master, force-push, or merge"*. **That was wrong, and it
+was wrong in an expensive way** — it was copied into several projects, where it
+stranded sessions holding finished, tested commits they believed they were
+forbidden to ship.
 
-Push to `main` → Actions builds → `upload-pages-artifact` → `deploy-pages`.
-Configure Pages as `build_type: workflow` and set the custom domain with:
+Two things were being confused. It is true that **nothing in this file grants a
+permission**: project instructions override an agent's default behaviour, not
+its permission layer. But that layer is *configurable*, and the lever is one
+entry — `Bash(./scripts/release.sh:*)` in `.claude/settings.json`, or the
+matching `prefix_rule` in `.codex/rules/shipping.rules` — not an immovable
+property of the harness. Once that rule is present a session cuts and deploys
+the release; without it, it cannot, and no amount of prose here changes that
+either way.
+
+## GitHub Pages
+
+The **`pages` target**: `./scripts/init-project.sh <app> --blocks web --target pages`.
+`.github/workflows/pages.yml` typechecks, tests and builds `frontend/`, then
+publishes `frontend/dist` on every push to `main` — so a release cut by
+`./scripts/release.sh` *is* the deploy. It stays skipped until Pages is enabled
+for the repository, once:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
+```
+
+With a custom domain the site is served at the root. Without one it lives under
+`/<repo>/`: set the repository variable `PAGES_BASE_PATH=/<repo>/` so Vite
+builds its asset URLs for that path. `index.html` is copied to `404.html`, so a
+deep link to a client-side route loads the app.
+
+Set the custom domain with:
 
 ```bash
 gh api -X PUT repos/<owner>/<repo>/pages -f cname=<domain>
@@ -201,11 +245,10 @@ a proxied-without-cert setup returns.
 > `https_enforced=true` is rejected until the cert exists, so it must be a
 > separate, later call.
 
-Next.js on Pages needs `output: "export"`, `images.unoptimized` and
-`trailingSlash`, publishing `out/`. No `basePath` — a custom domain serves at
-the root. Hash-based routing needs no SPA 404 fallback; path-based routing does.
+When the site later needs an API, move it onto the Pi:
+`python3 scripts/blocks.py add api --from <template checkout> --target pi-compose`.
 
-### Cloudflare Workers
+## Cloudflare Workers — documented, not scaffolded
 
 `wrangler.jsonc` binds the built directory as static assets with
 `custom_domain` routes. `npm run deploy` ships it. **Add a CI workflow with a

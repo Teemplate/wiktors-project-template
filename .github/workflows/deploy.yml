@@ -58,23 +58,34 @@ jobs:
 
       - name: Wait for it to answer
         # THE GATE. A container that starts and then dies on a bad import would
-        # otherwise be reported as a successful deploy.
+        # otherwise be reported as a successful deploy. What is checked follows
+        # the project's blocks (blocks.json): the api's /api/health, else the
+        # site, else the worker's heartbeat healthcheck.
         run: |
-          for attempt in $(seq 1 60); do
-            if docker exec ${APP_NAME}-backend python -c "
+          eval "$(python3 scripts/blocks.py env)"
+          answers() {
+            if [ "$HAS_API" = 1 ]; then
+              docker exec ${APP_NAME}-backend python -c "
           import json, urllib.request
           h = json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health'))
           raise SystemExit(0 if h.get('ok') else 1)
-          " 2>/dev/null; then
-              echo "healthy after ${attempt}s"; exit 0
+          "
+            elif [ "$HAS_WEB" = 1 ]; then
+              docker exec ${APP_NAME}-frontend wget -q -O /dev/null -T 5 http://localhost:5173/
+            else
+              [ "$(docker inspect -f '{{.State.Health.Status}}' ${APP_NAME}-worker)" = healthy ]
             fi
+          }
+          for attempt in $(seq 1 120); do
+            if answers 2>/dev/null; then echo "healthy after ${attempt}s"; exit 0; fi
             sleep 1
           done
           echo "::error::${APP_NAME} did not become healthy"
-          docker logs --tail 50 ${APP_NAME}-backend
+          docker compose -f compose.deploy.yml -p ${APP_NAME} logs --tail 50
           exit 1
 
       - name: Warn if a placeholder secret reached production
+        if: hashFiles('backend/app/main.py') != ''
         run: |
           docker exec ${APP_NAME}-backend python -c "
           import json, urllib.request

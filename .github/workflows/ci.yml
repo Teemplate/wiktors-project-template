@@ -11,7 +11,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Which blocks this project has (blocks.json, docs/BLOCKS.md). Every job that
+  # needs a block gates on these outputs, so a web-only project runs no Python
+  # jobs and an API-only one no Node jobs. A job-level `if:` cannot call
+  # hashFiles(), which is why this is a job and not an expression.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.b.outputs.web }}
+      api: ${{ steps.b.outputs.api }}
+      worker: ${{ steps.b.outputs.worker }}
+      postgres: ${{ steps.b.outputs.postgres }}
+      python: ${{ steps.b.outputs.python }}
+      template: ${{ steps.b.outputs.template }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: b
+        run: python3 scripts/blocks.py env --github | tee -a "$GITHUB_OUTPUT"
+      - name: Blocks, files and generated compose agree
+        run: python3 scripts/blocks.py check
+      - name: blocks.py regression cases (template only)
+        if: steps.b.outputs.template == 'true'
+        run: python3 scripts/tests/test_blocks.py
+
   backend:
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -29,13 +54,18 @@ jobs:
         # An import-time error (a bad name, a missing stdlib import) is
         # otherwise only discovered when the container starts in production.
         working-directory: backend
-        run: python -c "import app.main"
+        run: |
+          for m in main worker; do
+            if [ -f "app/$m.py" ]; then python -c "import app.$m" && echo "app.$m imports"; fi
+          done
 
       - name: Tests
         working-directory: backend
         run: pytest
 
   frontend:
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -80,7 +110,11 @@ jobs:
         run: |
           cp .env.example .env
           docker compose -f docker-compose.yml   config --quiet
-          docker compose -f compose.deploy.yml   config --quiet
+          # Only a pi-compose project has one.
+          if [ -f compose.deploy.yml ]; then
+            docker compose -f compose.deploy.yml config --quiet
+            STACK=ci-staging docker compose -f compose.deploy.yml config --quiet
+          fi
           # compose.e2e.yml reads .env.e2e, which scripts/e2e.sh writes at run
           # time. A minimal stand-in is enough to validate the file's shape.
           printf 'E2E_PROJECT=ci\nE2E_WEB_PORT=5273\nE2E_API_PORT=8273\n' > .env.e2e
@@ -88,6 +122,8 @@ jobs:
 
   migrations:
     name: migrations apply cleanly
+    needs: detect
+    if: needs.detect.outputs.postgres == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -146,7 +182,8 @@ jobs:
 
   migration-safety:
     name: destructive migration guard
-    if: github.event_name == 'pull_request'
+    needs: detect
+    if: github.event_name == 'pull_request' && needs.detect.outputs.postgres == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -166,16 +203,44 @@ jobs:
           python3 scripts/check_migration_safety.py $changed
 
   images:
-    name: both images build
+    name: images build
+    needs: detect
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       # Built on x86 here purely to prove the Dockerfiles are valid. The real
       # arm64 images are built natively on the Pi at deploy time.
       - name: Build backend image
+        if: needs.detect.outputs.python == 'true'
         run: docker build -t app-backend:ci ./backend
       - name: Build frontend image
+        if: needs.detect.outputs.web == 'true'
         run: docker build -t app-frontend:ci --target prod ./frontend
+
+  # Template only: cut a project for each block combination with the real
+  # init-project.sh, then run THAT project's checks with only its own
+  # dependencies installed. This is what proves the blocks are separable.
+  presets:
+    name: "preset: ${{ matrix.preset }}"
+    needs: detect
+    if: needs.detect.outputs.template == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [full, classic, site, web-api, api, worker, bot]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Init and check the project
+        run: python3 scripts/check_preset.py ${{ matrix.preset }} --unit
 
   secrets:
     name: gitleaks

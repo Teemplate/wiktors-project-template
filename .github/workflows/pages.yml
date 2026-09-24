@@ -1,0 +1,82 @@
+name: Pages
+
+# The `pages` target (docs/BLOCKS.md): a web-only project, built and published
+# to GitHub Pages on every push to main — which, under Gitflow, means on every
+# release cut by ./scripts/release.sh. There is no server and no deploy agent.
+#
+# One-time setup, per repository:
+#   gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
+# Custom domain: create the DNS record FIRST (grey cloud), then
+#   gh api -X PUT repos/<owner>/<repo>/pages -f cname=<domain>
+# docs/DEPLOYMENT.md § GitHub Pages has the certificate gotcha that goes with it.
+#
+# Served at the domain root with a custom domain. Without one, a project site
+# lives under /<repo>/: set the repository variable PAGES_BASE_PATH=/<repo>/ so
+# Vite builds its asset URLs for that path.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One publish at a time, and never cancel one half-way through.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Skipped until Pages is enabled for the repository (the one-time setup
+    # above). Without this, a repo with Pages off — the template itself, or the
+    # first push of a new project — fails every run instead of saying nothing.
+    if: github.event.repository.has_pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+        working-directory: frontend
+
+      # The same gate CI applies: nothing is published that CI would reject.
+      - name: Typecheck and test
+        run: npm run typecheck && npm test
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_BASE: ${{ vars.PAGES_BASE_PATH || '/' }}
+
+      # Pages has no SPA fallback. Serving index.html as the 404 page lets a
+      # deep link to a client-side route load the app instead of GitHub's 404.
+      - name: SPA fallback
+        run: cp frontend/dist/index.html frontend/dist/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

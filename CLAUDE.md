@@ -11,9 +11,14 @@
 
 ## Stack
 
-Vite/React (TypeScript) frontend + FastAPI (async SQLAlchemy, Postgres) backend,
-deployed as a Docker Compose stack on the **Raspberry Pi 5** behind the shared
-Caddy and a Cloudflare Tunnel. Live at **https://CHANGEME.example.com**.
+Built from **blocks** — `web` (Vite/React/TypeScript), `api` (FastAPI),
+`worker` (Python loop), `postgres` (async SQLAlchemy, Alembic) — deployed as a
+Docker Compose stack on the **Raspberry Pi 5** behind the shared Caddy and a
+Cloudflare Tunnel (`pi-compose`) or to GitHub Pages (`pages`). `blocks.json`
+says which this project has (`python3 scripts/blocks.py status`); the contract
+and how to add one: [docs/BLOCKS.md](./docs/BLOCKS.md). This template does not
+represent a live deployment. Set a real `PUBLIC_HOST` and record the adopted
+deployment model when creating an application.
 
 ## Shipping — what a session may do without asking
 
@@ -25,7 +30,7 @@ back to the human as questions.
 | commit on a `feature/*` branch | yes |
 | `git push origin feature/<name>` | yes — a branch that exists only on this laptop is not backed up |
 | merge `--no-ff` into `develop`, `git push origin develop` | yes |
-| **deploy to staging** | yes — automatic *if you adopted `compose.staging.yml` + the `deploy/` agent*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
+| **deploy to staging** | yes — automatic *if you installed `app-deploy staging` (the `deploy/` agent)*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
 | cut `release/vX.Y.Z` → `main` + **signed** tag → merge back to `develop`, push all three | yes — via `./scripts/release.sh vX.Y.Z --yes` |
 | deploy that release to production | yes — **whichever of the two paths this project adopted**: the pull-based `app-deploy prod` (newest **signed** `v*` tag reachable from `origin/main`), or the self-hosted runner in `.github/workflows/deploy.yml`, or the manual compose command in § Deployment if neither is set up yet |
 
@@ -112,15 +117,12 @@ read.
   `.env` is read locally, so a worktree ships empty `${VAR}` interpolation and
   code that is not on `develop`/`main` yet.
 
-**This file cannot grant any of the above.** Project instructions override an
-agent's default behaviour, not its permission layer — and the file that actually
-lets these commands run is a different one for each agent:
-`.claude/settings.json` for Claude Code, `.codex/rules/shipping.rules` for
-Codex. If a push or a deploy is refused, those are where to look, not here. Both
-ship with this template already populated, carrying the same policy in each
-tool's own syntax; the one thing to change per project is the deploy command in
-them. Which one is yours, and the way each can be silently inert:
-[§ Your agent](#your-agent--claude-code-or-codex).
+**Instructions and tool permissions are separate.** These project rules apply
+to both agents. `.claude/settings.json`, where present, configures Claude Code
+only; it does not configure Codex. Codex uses its effective user configuration
+and any trusted project `.codex/` configuration and rules. Check the active
+agent's permissions when a command is refused; do not infer a grant from the
+other agent's settings or invent a settings file.
 
 ⚠️ **Production refuses an unsigned tag.** `deploy/app-deploy` sets
 `REQUIRE_SIGNED_TAG=1` for `prod`: an unsigned tag is not deployed and
@@ -255,25 +257,34 @@ directly), `develop` = integration, `feature/*` off `develop`,
 (cut it with `./scripts/release.sh vX.Y.Z`, never by hand),
 `hotfix/*` off **`main`** → merged into **both**.
 
-**Checks before every merge:**
+**Checks before every merge** (`python3 scripts/blocks.py checks` lists them):
 
 ```bash
+python3 scripts/blocks.py check      # blocks, files and compose agree
+# block:api|worker|postgres
 cd backend  && pytest                # no database, no secrets needed
-cd frontend && npm run typecheck     # never `next lint` — it prompts interactively
-cd frontend && npm test              # vitest
+# /block
+# block:web
+cd frontend && npm run typecheck && npm test
+# /block
 ```
 
 **Also run `./scripts/e2e.sh`** when the change touches the API surface,
-`nginx.conf`, a migration or `app/seed.py`. It stands up a disposable stack
-(tmpfs Postgres, ports 5273/8273), migrates, seeds, and drives a real browser
-through the real nginx `/api` proxy — then tears it all down. It refuses to run
-the browser tests if the seed produced no rows, because against an empty list
-every UI assertion passes vacuously.
+`frontend/nginx/`, a compose fragment, a migration or `app/seed.py`. It stands up
+a disposable stack of this project's blocks (ports 5273/8273), migrates, seeds,
+and drives a real browser through the real nginx `/api` proxy — then tears it
+all down. It refuses to run the browser tests if the seed produced no rows,
+because against an empty list every UI assertion passes vacuously.
 
+Root compose files are generated: edit the fragments in `*/compose/`, then
+`python3 scripts/blocks.py sync`.
+
+<!-- block:postgres -->
 **Schema changes go through Alembic**, never `create_all()`. Autogenerate,
 review the file, and keep `app/seed.py` in step in the same commit. CI enforces
 exactly one migration head, a clean up-and-down against an empty database, and
 no `drop_table`/`drop_column` in `upgrade()` without a `destructive-ok` label.
+<!-- /block -->
 
 A fresh worktree has **no** gitignored files — no `.env`, no `node_modules`, no
 `.venv`. Symlink them or run the checks in the primary checkout.
@@ -289,11 +300,27 @@ WIP commit instead.
 
 Full procedure: **[docs/DEVELOPING.md](./docs/DEVELOPING.md)**.
 
+## Model routing — spend capability at the decision points
+
+Gitflow controls the branch; **[docs/MODEL-ROUTING.md](./docs/MODEL-ROUTING.md)**
+controls the default Codex model by phase. Use Astra to plan complex work,
+Terra for routine implementation, deterministic checks as the gate, and
+Sol or Astra to diagnose difficult failures and review high-risk changes.
+Luna is limited to tightly specified mechanical work. Small, low-risk changes
+may stay on Terra end to end.
+
+Run routed stages serially: one writing agent owns a feature worktree at a
+time, and hands off through the plan file, diff and check output. The user's
+explicit model choice wins; if a named model is unavailable, use the closest
+capability tier and record the substitution. Keep `.codex/config.toml`
+model-neutral so account-level choices remain portable.
+
 ## Agentic pipeline — Claude Code only
 
 The workflow above, driven by agents instead of by hand. **Claude Code only**:
-Codex has no `Agent` tool, no worktree tool and no `SendMessage`, so a Codex
-session ignores this section and follows § Development workflow directly.
+these Claude-specific skill and persona files do not configure Codex.
+A Codex session follows § Development workflow; available delegation tools
+depend on its environment, not on the presence of `.claude/` files.
 
 | piece | where |
 |---|---|
@@ -343,6 +370,11 @@ is what binds first.
 
 ## Deployment
 
+<!-- block:pages -->
+Push to `main` → `.github/workflows/pages.yml` builds and publishes `frontend/`
+to GitHub Pages; `./scripts/release.sh` is the deploy. Verify the page itself.
+<!-- /block -->
+<!-- block:pi-compose -->
 Push to `main` → the Pi's self-hosted runner rebuilds and restarts, **gated on
 `/api/health`**. If that runner is not set up yet, deploy manually from the
 primary checkout:
@@ -363,9 +395,10 @@ docker --context pi-deploy compose -f compose.deploy.yml -p CHANGEME up -d --bui
   copied to the Pi. Editing it here and redeploying changes production config.
 - **Persistent data**: `/mnt/ssd/apps/CHANGEME/postgres-data`, bind-mounted.
 - **Public routing**: Cloudflare Tunnel → shared Caddy, whose block is
-  `http://CHANGEME.example.com { reverse_proxy CHANGEME-frontend:5173 }`. The
-  `http://` is deliberate: Cloudflare terminates TLS at its edge and Caddy has no
-  public port on which to complete an ACME challenge.
+  `http://CHANGEME.example.com { reverse_proxy CHANGEME-frontend:5173 }` (or
+  `CHANGEME-backend:8000` without `web`). The `http://` is deliberate: Cloudflare
+  terminates TLS at its edge and Caddy has no public port for an ACME challenge.
+<!-- /block -->
 
 ### Cutting a release — `./scripts/release.sh`
 
@@ -396,21 +429,10 @@ read it, rather than guessing.
 
 ⚠️ **A session runs this itself** — see § Shipping at the top of this file.
 
-This paragraph used to say the opposite: that a session "cannot run this, and
-cannot `git push origin main`", because of a blanket harness rule quoted as
-*"never push to main/master, force-push, or merge"*. **That was wrong, and it
-was wrong in an expensive way** — it was copied into several projects, where it
-stranded sessions holding finished, tested commits they believed they were
-forbidden to ship.
-
-Two things were being confused. It is true that **nothing in this file grants a
-permission**: project instructions override an agent's default behaviour, not
-its permission layer. But that layer is *configurable*, and the lever is one
-entry — `Bash(./scripts/release.sh:*)` in `.claude/settings.json`, or the
-matching `prefix_rule` in `.codex/rules/shipping.rules` — not an immovable
-property of the harness. Once that rule is present a session cuts and deploys
-the release; without it, it cannot, and no amount of prose here changes that
-either way.
+Why a session may run it — and why this file once said otherwise, expensively —
+is in [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#why-a-session-runs-the-release).
+The short version: nothing in this file grants a permission; the one
+`./scripts/release.sh` rule in each grant file does.
 
 **Be clear-eyed about what that rule grants.** The permission layer gates the
 `Bash` call, not what the script does inside it, so allowing
@@ -437,28 +459,17 @@ container cannot reach the backend at all. Record here any status code that is
 basic_auth gate — so a future session does not read a correct response as an
 outage.
 
-## Your own infrastructure — `local/`
+## Your own infrastructure — optional `local/` notes
 
-The docs in this repo are generic on purpose (`example.com`, `<pi-lan-ip>`,
-`<your-org>`) because **this repository is public**. The real hostnames, LAN
-address, SSH aliases, server paths and app inventory live in **`local/`**, which
-is gitignored.
+`local/infrastructure.md` and `local/deployments.md`, when present, contain
+private machine-specific details. They are gitignored and may be absent in a
+fresh clone or worktree. Never commit them or copy secrets into agent guides.
 
-**Read `local/infrastructure.md` before answering anything about where this
-deploys** — the domain and addresses in the tracked docs are placeholders, and
-acting on them will point at somebody else's example.com. `local/deployments.md`
-records what is actually live.
-
-`local/` is gitignored, so like `.env` it does **not exist in a fresh worktree**.
-Symlink it when a session needs it:
-
-```bash
-ln -s ../../../local local
-```
-
-Never move a file out of `local/` to make it visible, and never `git add -f` it.
-CI fails the build if anything under `local/` is tracked. The tracked template is
-`local.example/`.
+Use this guide and [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for the tracked
+deployment procedure. `local.example/` shows the optional notes format. If the
+actual target or deployment state is not documented, establish it before any
+production action; an example hostname is not evidence of a live deployment.
+For local development, the tracked setup and example configuration are enough.
 
 ## Secrets
 
@@ -468,3 +479,22 @@ tests — if something appears to need a credential to develop, that is the wron
 approach. `SECRET_KEY` must be a real value in production;
 `/api/health` reports `placeholder_secret: true` if the dev default is still in
 place, and the deploy workflow raises a warning on it.
+
+## Maintaining agent context
+
+Development base: `develop`.
+
+`AGENTS.md` and `CLAUDE.md` are tracked, byte-identical entry points for Codex
+and Claude Code. Edit either, then copy it to the other. Keep each below 28 KiB;
+put detailed reference material in linked files. Fresh clones must have all
+required public context without machine-specific notes or credentials.
+
+Run `python3 scripts/check_agent_context.py` before finishing instruction or
+configuration changes; the same check runs in `.github/workflows/agent-context.yml`.
+`.agent-context.json` records the development base and required reference files.
+If this project has Codex command rules, also run the checker with `--check-rules`.
+
+Codex can create an isolated checkout with `git worktree add`; Claude Code may
+also expose `EnterWorktree`. Use the development base above and preserve other
+sessions' work. Gitignored credentials and dependencies are absent in fresh
+worktrees. A parent folder's guide is not a substitute for this repo's own guide.

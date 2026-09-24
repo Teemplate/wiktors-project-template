@@ -1,0 +1,10 @@
+# Glue: api + postgres. Waits for `migrate` (postgres.dev.yml), so the schema is
+# current before the app serves a request — without that a teammate's fresh
+# clone starts against an empty database.
+services:
+  backend:
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
