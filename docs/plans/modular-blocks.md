@@ -51,7 +51,7 @@ None.
 - `backend/` — `compose/`, `app/main.py`, `app/routes/`, `app/worker.py`, `requirements.txt`, `tests/`
 - `deploy/app-deploy`, `scripts/e2e.sh`, `scripts/init-project.sh`, `scripts/release.sh`
 - `.github/workflows/{ci,e2e,deploy,pages}.yml`
-- `AGENTS.md`, `CLAUDE.md`, `README.md`, `SETUP.md`, `.env.example`, `.agent-context.json`
+- `AGENTS.md`, `CLAUDE.md`, `README.md`, `SETUP.md`, `.env.example`, `.gitignore`
 - `docs/BLOCKS.md`, `docs/DEPLOYMENT.md`, `docs/DEVELOPING.md`, `.claude/agents/feature-dev.md`, `.claude/skills/feature/SKILL.md`
 
 ## Checks

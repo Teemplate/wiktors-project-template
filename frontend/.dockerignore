@@ -4,8 +4,6 @@
 # correct arm64 install with the host's x86-64 binaries.
 node_modules/
 dist/
-.next/
-out/
 .env
 .env.*
 .git/
