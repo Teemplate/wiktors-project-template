@@ -28,6 +28,11 @@ STAGING_DOMAIN="CHANGEME-app-staging.example.com"
 # route is broken; checking only health is how a deploy goes green with a dead
 # database behind it.
 DATA_ROUTE="/api/items"
+# Which blocks this project has (docs/BLOCKS.md). Written by scripts/blocks.py
+# when the project is initialised or a block is added, and deliberately a
+# literal here rather than read from the checkout: this installed copy decides
+# how to deploy, so a merge must not be able to change that.
+BLOCKS="web api worker postgres"
 # ------------------------------------------------------------------------------
 
 ENV_NAME="${1:-}"
@@ -37,7 +42,6 @@ case "$ENV_NAME" in
   staging)
     TRACK_REF="refs/remotes/origin/develop"
     REQUIRE_SIGNED_TAG=0
-    COMPOSE_FILE="compose.staging.yml"
     PROJECT="${APP}-staging"
     PUBLIC_URL="https://${STAGING_DOMAIN}"
     ;;
@@ -47,7 +51,6 @@ case "$ENV_NAME" in
     # unsigned tag is REFUSED and production simply stays where it is -- which
     # is the behaviour that has already caught a real mistake in production.
     REQUIRE_SIGNED_TAG=1
-    COMPOSE_FILE="compose.deploy.yml"
     PROJECT="${APP}"
     PUBLIC_URL="https://${DOMAIN}"
     ;;
@@ -56,6 +59,17 @@ case "$ENV_NAME" in
     exit 2
     ;;
 esac
+
+# One compose file for both: STACK namespaces every container, image and data
+# directory, so staging can never touch production's.
+COMPOSE_FILE="compose.deploy.yml"
+export STACK="$PROJECT"
+
+has() { case " $BLOCKS " in *" $1 "*) return 0 ;; esac; return 1; }
+# Everything built from backend/ shares one image: api, worker and migrate.
+has_python() { has api || has worker || has postgres; }
+# Something Caddy routes to, and therefore something the edge check can reach.
+has_public() { has web || has api; }
 
 BASE="/mnt/ssd/apps/${PROJECT}"
 SRC="${BASE}/src"
@@ -70,9 +84,12 @@ NOTIFY_CONF="${BASE}/env/notify.conf"
 
 BACKEND_C="${PROJECT}-backend"
 FRONTEND_C="${PROJECT}-frontend"
+WORKER_C="${PROJECT}-worker"
 DB_C="${PROJECT}-db"
-BACKEND_IMG="${PROJECT}-backend:latest"
-FRONTEND_IMG="${PROJECT}-frontend:latest"
+
+IMAGES=()
+has_python && IMAGES+=("${PROJECT}-backend")
+has web && IMAGES+=("${PROJECT}-frontend")
 
 # A browser UA because Cloudflare Bot Fight Mode makes plain curl unreliable.
 UA="Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -150,11 +167,9 @@ avail_gb=$(df -BG --output=avail "$BASE" | tail -1 | tr -dc '0-9')
 # :rollback tag also stops the old image being reaped as dangling.
 
 HAVE_ROLLBACK=0
-for pair in "$BACKEND_IMG ${PROJECT}-backend:rollback" "$FRONTEND_IMG ${PROJECT}-frontend:rollback"; do
-  # shellcheck disable=SC2086
-  set -- $pair
-  if docker image inspect "$1" >/dev/null 2>&1; then
-    docker tag "$1" "$2"
+for img in "${IMAGES[@]}"; do
+  if docker image inspect "${img}:latest" >/dev/null 2>&1; then
+    docker tag "${img}:latest" "${img}:rollback"
     HAVE_ROLLBACK=1
   fi
 done
@@ -175,7 +190,9 @@ PGUSER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
 PGDB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
 DUMP="${BACKUP_DIR}/predeploy-$(date +%Y%m%d-%H%M%S).dump"
 
-if docker ps --format '{{.Names}}' | grep -qx "$DB_C"; then
+if ! has postgres; then
+  DUMP=""
+elif docker ps --format '{{.Names}}' | grep -qx "$DB_C"; then
   docker exec "$DB_C" pg_dump -U "$PGUSER" -d "$PGDB" -Fc > "$DUMP" 2>>"$LOG" \
     || die "pg_dump failed — refusing to run migrations without a backup"
   [ "$(stat -c%s "$DUMP")" -gt 1000 ] \
@@ -187,44 +204,7 @@ else
   log "no database container running yet; skipping pre-deploy backup"
 fi
 
-# ------------------------------------------------------------------ rollback --
-
-rollback() {
-  notify ERROR "$1 — rolling back to ${DEPLOYED_SHA:0:8}"
-  if [ "$HAVE_ROLLBACK" = "1" ]; then
-    docker tag "${PROJECT}-backend:rollback"  "$BACKEND_IMG"
-    docker tag "${PROJECT}-frontend:rollback" "$FRONTEND_IMG"
-  else
-    notify ERROR "no previous image to roll back to — this was the first deploy"
-  fi
-  if [ "$DEPLOYED_SHA" != "none" ]; then
-    git reset --quiet --hard "$DEPLOYED_SHA" || true
-  fi
-  compose up -d --no-build --force-recreate >>"$LOG" 2>&1 || true
-  # Never report a rollback that has not been confirmed. A rollback that
-  # silently does nothing is worse than no rollback: it leaves broken code live
-  # under a green log line.
-  if docker exec "$BACKEND_C" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000${DATA_ROUTE}').status==200 else 1)" >/dev/null 2>&1; then
-    notify ERROR "rollback verified: ${DATA_ROUTE} is serving again"
-  else
-    notify ERROR "ROLLBACK DID NOT RESTORE A WORKING SITE — needs a human now"
-  fi
-  # Deliberately NOT restoring the database. If a migration applied and the
-  # deploy then failed, a pg_restore racing live traffic is worse than a human
-  # looking at $DUMP. That call is not the agent's to make.
-  notify ERROR "rolled back. Containers are on the previous images; the SCHEMA WAS NOT reverted. Backup: ${DUMP:-none}"
-  exit 1
-}
-
-# ---------------------------------------------------------------- start them --
-# compose runs `migrate` to completion before it recreates the app services, so
-# a bad revision aborts here with the old containers still up.
-
-if ! compose up -d --no-build >>"$LOG" 2>&1; then
-  rollback "migrations or startup failed for $TARGET_DESC"
-fi
-
-# -------------------------------------------------------------- health checks --
+# ----------------------------------------------------------- health helpers --
 # Container-local, because that is the only layer that tells the truth about the
 # app. /api/health does NOT touch the database, so a real data route is checked
 # too.
@@ -242,16 +222,90 @@ py_get() {
   docker exec "$1" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000$2').status==200 else 1)"
 }
 
-check "backend /api/health"   py_get "$BACKEND_C" "/api/health" \
-  || rollback "backend /api/health never came up"
-check "backend ${DATA_ROUTE}" py_get "$BACKEND_C" "$DATA_ROUTE" \
-  || rollback "backend ${DATA_ROUTE} failed — the database path is broken"
-check "frontend /"            docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://localhost:5173/ \
-  || rollback "frontend never rendered"
-# The nginx /api proxy specifically: if the SPA fallback swallows /api/*, this
-# returns HTML with a 200 and the site looks fine while being entirely broken.
-check "frontend /api proxy"   docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 "http://localhost:5173/api/health" \
-  || rollback "the frontend's /api proxy is not reaching the backend"
+# A worker has no port: its Docker healthcheck reads the heartbeat file.
+healthy() {
+  [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$1" 2>/dev/null)" = "healthy" ]
+}
+
+# The one thing that proves this project is serving — whichever blocks it has.
+serving() {
+  if has api; then py_get "$BACKEND_C" "${DATA_ROUTE:-/api/health}"
+  elif has web; then docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://localhost:5173/
+  else healthy "$WORKER_C"
+  fi
+}
+serving_desc() {
+  if has api; then echo "${DATA_ROUTE:-/api/health}"; elif has web; then echo "the site"; else echo "the worker"; fi
+}
+
+# ------------------------------------------------------------------ rollback --
+
+rollback() {
+  notify ERROR "$1 — rolling back to ${DEPLOYED_SHA:0:8}"
+  if [ "$HAVE_ROLLBACK" = "1" ]; then
+    for img in "${IMAGES[@]}"; do
+      docker image inspect "${img}:rollback" >/dev/null 2>&1 && docker tag "${img}:rollback" "${img}:latest"
+    done
+  else
+    notify ERROR "no previous image to roll back to — this was the first deploy"
+  fi
+  if [ "$DEPLOYED_SHA" != "none" ]; then
+    git reset --quiet --hard "$DEPLOYED_SHA" || true
+  fi
+  compose up -d --no-build --force-recreate >>"$LOG" 2>&1 || true
+  # Never report a rollback that has not been confirmed. A rollback that
+  # silently does nothing is worse than no rollback: it leaves broken code live
+  # under a green log line.
+  if check "rollback" serving; then
+    notify ERROR "rollback verified: $(serving_desc) is serving again"
+  else
+    notify ERROR "ROLLBACK DID NOT RESTORE A WORKING SITE — needs a human now"
+  fi
+  # Deliberately NOT restoring the database. If a migration applied and the
+  # deploy then failed, a pg_restore racing live traffic is worse than a human
+  # looking at $DUMP. That call is not the agent's to make.
+  if has postgres; then
+    notify ERROR "rolled back. Containers are on the previous images; the SCHEMA WAS NOT reverted. Backup: ${DUMP:-none}"
+  else
+    notify ERROR "rolled back. Containers are on the previous images."
+  fi
+  exit 1
+}
+
+# ---------------------------------------------------------------- start them --
+# compose runs `migrate` to completion before it recreates the app services, so
+# a bad revision aborts here with the old containers still up.
+
+if ! compose up -d --no-build >>"$LOG" 2>&1; then
+  rollback "migrations or startup failed for $TARGET_DESC"
+fi
+
+# -------------------------------------------------------------- health checks --
+
+if has api; then
+  check "backend /api/health"   py_get "$BACKEND_C" "/api/health" \
+    || rollback "backend /api/health never came up"
+  if [ -n "$DATA_ROUTE" ]; then
+    check "backend ${DATA_ROUTE}" py_get "$BACKEND_C" "$DATA_ROUTE" \
+      || rollback "backend ${DATA_ROUTE} failed — the database path is broken"
+  fi
+fi
+if has web; then
+  check "frontend /"            docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://localhost:5173/ \
+    || rollback "frontend never rendered"
+fi
+if has web && has api; then
+  # The nginx /api proxy specifically: if the SPA fallback swallows /api/*, this
+  # returns HTML with a 200 and the site looks fine while being entirely broken.
+  check "frontend /api proxy"   docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 "http://localhost:5173/api/health" \
+    || rollback "the frontend's /api proxy is not reaching the backend"
+fi
+if has worker; then
+  # The heartbeat healthcheck needs a completed tick; start_period is 60s.
+  for _ in 1 2 3; do healthy "$WORKER_C" && break; sleep 20; done
+  check "worker heartbeat"      healthy "$WORKER_C" \
+    || rollback "the worker never reported a fresh heartbeat"
+fi
 
 # Edge check. No credentials: a site behind basic_auth or Cloudflare Access
 # answers 401/302 before it ever proxies, which is exactly what proves DNS, the
@@ -261,7 +315,10 @@ edge_ok() {
   code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 -A "$UA" "$PUBLIC_URL/")
   case "$code" in 200|301|302|401) return 0 ;; *) return 1 ;; esac
 }
-check "edge $PUBLIC_URL" edge_ok || rollback "$PUBLIC_URL did not answer through the tunnel"
+# A worker-only project has no public URL to check.
+if has_public; then
+  check "edge $PUBLIC_URL" edge_ok || rollback "$PUBLIC_URL did not answer through the tunnel"
+fi
 
 # ------------------------------------------------------------------- succeed --
 

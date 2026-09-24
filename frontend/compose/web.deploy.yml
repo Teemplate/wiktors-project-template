@@ -1,0 +1,22 @@
+# Block: web — production and staging on the Pi. The public block whenever it
+# is present: it joins the shared `web` network and Caddy targets it:
+#     http://<app>.example.com { reverse_proxy <app>-frontend:5173 }
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+      args:
+        # VITE_* are inlined at BUILD time, so this must be a build arg — an
+        # environment: entry would arrive too late to affect the bundle.
+        - VITE_API_BASE=${VITE_API_BASE:-}
+    image: ${STACK:-${APP_NAME}}-frontend
+    container_name: ${STACK:-${APP_NAME}}-frontend
+    restart: unless-stopped
+    # `web` reaches the shared Caddy; `internal` reaches our own backend.
+    networks: [web, internal]
+
+networks:
+  web:
+    external: true
+  internal:

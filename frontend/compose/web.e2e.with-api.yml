@@ -1,0 +1,8 @@
+services:
+  web:
+    environment:
+      # Compose's default network aliases the service name, so this resolves
+      # without knowing the project prefix. (No shared network in e2e.)
+      BACKEND_HOST: backend
+    depends_on:
+      backend: {condition: service_healthy}

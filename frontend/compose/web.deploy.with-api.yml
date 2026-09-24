@@ -1,0 +1,10 @@
+# Glue: web + api. nginx proxies /api to the backend (nginx/snippets/). Must be
+# the backend's real container name, which carries the stack prefix: the bare
+# service name `backend` is ambiguous on the shared `web` network.
+services:
+  frontend:
+    environment:
+      - BACKEND_HOST=${STACK:-${APP_NAME}}-backend
+    depends_on:
+      backend:
+        condition: service_healthy

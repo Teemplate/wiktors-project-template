@@ -1,19 +1,25 @@
 # Project Template
 
-A ready-to-clone scaffold for a **Docker Compose app deployed on the Raspberry
-Pi 5** behind the shared Caddy + Cloudflare Tunnel. Vite/React frontend +
-FastAPI/Postgres backend, with the CI, deploy automation, tests, docs and dev
-workflow a production deployment actually needs — and with the traps that
-bite it pre-fixed.
+A ready-to-clone scaffold built from **blocks** — a Vite/React website, a
+FastAPI service, a Python worker, Postgres — that fit together, deployed as a
+**Docker Compose app on the Raspberry Pi 5** behind the shared Caddy +
+Cloudflare Tunnel, or as a **static site on GitHub Pages**. A new project takes
+only the blocks it uses, with the CI, deploy automation, tests, docs and dev
+workflow a production deployment actually needs — and with the traps that bite
+it pre-fixed.
 
 **This is a starting point, not a deployed app.**
 
 ```bash
 git clone --depth 1 https://github.com/inspizzz/wiktors-project-template.git my-app
-cd my-app && ./scripts/init-project.sh my-app
+cd my-app && ./scripts/init-project.sh my-app                         # web, api, postgres
+#          ./scripts/init-project.sh my-app --blocks web --target pages   # a static site
+#          ./scripts/init-project.sh my-app --blocks worker               # a bot, no website
 ```
 
-That is SETUP.md steps 1–5 in one command. See **[SETUP.md](./SETUP.md)** for
+That is SETUP.md steps 1–5 in one command. **[docs/BLOCKS.md](./docs/BLOCKS.md)**
+lists the blocks, the contract that makes them compatible, and how to add one
+to a project later. See **[SETUP.md](./SETUP.md)** for
 what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 
 > **No server yet?** The deploy steps assume a machine that already runs a
@@ -29,20 +35,24 @@ what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 
 | Path | Why it exists |
 |---|---|
-| `docker-compose.yml` | Local dev: overridable ports, hot reload, **migrates itself on start** |
-| `compose.deploy.yml` | Production on the Pi: no ports, external `web` network, bind-mounted data, one-shot `migrate` service |
-| `compose.e2e.yml` + `scripts/e2e.sh` | Disposable full stack: build → migrate → seed → Playwright → tear down |
-| `compose.staging.yml` | Optional second environment tracking `develop` |
+| `blocks.json`, `scripts/blocks.py` | **Which blocks this project has** and which files each owns; prunes, adds, and regenerates the compose files. [docs/BLOCKS.md](./docs/BLOCKS.md) |
+| `frontend/compose/`, `backend/compose/` | Each block's compose fragments, per environment, plus the glue between blocks |
+| `docker-compose.yml` | Local dev (generated `include:` list): overridable ports, hot reload, **migrates itself on start** |
+| `compose.deploy.yml` | Production on the Pi (generated): no ports, external `web` network, bind-mounted data, one-shot `migrate` service. Staging is the same file with `STACK=<app>-staging` |
+| `compose.e2e.yml` + `scripts/e2e.sh` | Disposable stack of this project's blocks: build → migrate → seed → Playwright → tear down |
+| `backend/app/worker.py` | The `worker` block: a loop with no port, healthy while its heartbeat is fresh |
 | `backend/app/seed.py` | **The keystone.** An empty database is not a runnable app |
 | `backend/migrations/` | Alembic. The schema is owned by migrations, never `create_all()` |
 | `deploy/` | Pull-based **signed-tag** deploy agent: backs up, health-gates, rolls back and *verifies* the rollback |
-| `frontend/` | Vite + React, multi-stage Dockerfile, vitest unit tests, Playwright e2e |
-| `frontend/nginx.conf` | SPA fallback **and the `/api` proxy** — without the latter `/api/*` returns `index.html` and the frontend can never reach its backend |
+| `frontend/` | Vite + React, multi-stage Dockerfile, vitest unit tests, Playwright e2e. Features in `src/features/` are discovered, so one that needs the api leaves with it |
+| `frontend/nginx/` | SPA fallback, and — with the api block — **the `/api` proxy**: without it `/api/*` returns `index.html` and the frontend can never reach its backend |
 | `*/.dockerignore` | **Both present deliberately** — a missing one shipped a 1.1 GB context over SSH and overwrote an arm64 install with x86-64 binaries, twice |
-| `.github/workflows/ci.yml` | 8 jobs: tests, typecheck, build, one-alembic-head, migrations up/down, destructive-migration guard, images, gitleaks, agent instructions |
+| `.github/workflows/ci.yml` | Gated on the blocks present: tests, typecheck, build, one-alembic-head, migrations up/down, destructive-migration guard, images, gitleaks, agent instructions — and, in the template, a project cut per block combination |
 | `.github/workflows/e2e.yml` | The full stack: nightly, on demand, or on a `run-e2e` label |
 | `.github/workflows/deploy.yml` | The *alternative* deploy model (self-hosted runner). Pick this **or** `deploy/`, not both |
-| `scripts/init-project.sh` | Turns a copy of this template into a real project: placeholders, git history, GitHub repo |
+| `.github/workflows/pages.yml` | The `pages` target: build and publish `frontend/` on every push to `main` |
+| `scripts/check_preset.py` | Template only: init a project per block combination and check it (`--unit`, `--e2e`) |
+| `scripts/init-project.sh` | Turns a copy of this template into a real project: placeholders, `--blocks`/`--target`, git history, GitHub repo |
 | `scripts/check_migration_safety.py` | Fails a PR that drops a table or column in `upgrade()` |
 | `scripts/hooks/session-start.sh` | Re-roots auto-created agent branches from `main` onto `develop`. Run by **both** agents, from a path belonging to neither |
 | `.env.example` | Every variable, with safe local defaults |
@@ -62,7 +72,7 @@ cp .env.example .env
 # If 5432 / 8000 / 5173 are taken on your machine, set DEV_DB_PORT,
 # DEV_API_PORT, DEV_WEB_PORT in .env first: ss -ltn | grep -E ':5432|:8000|:5173'
 docker compose up --build
-docker compose exec backend python -m app.seed
+docker compose run --rm migrate python -m app.seed
 # frontend  http://localhost:5173     (lists the three seeded items)
 # backend   http://localhost:8000/api/health
 ```

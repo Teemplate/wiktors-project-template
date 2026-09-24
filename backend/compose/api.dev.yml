@@ -1,0 +1,16 @@
+# Block: api — local development. Included by the root docker-compose.yml,
+# which scripts/blocks.py generates; paths resolve from the repo root.
+services:
+  backend:
+    build:
+      context: ./backend
+    env_file: .env
+    ports:
+      # Overridable: 8000 in particular is often already taken by another local
+      # dev server.
+      - "${DEV_API_PORT:-8000}:8000"
+    volumes:
+      # `:z` relabels the mount so SELinux (Fedora, RHEL) lets the container
+      # read it. Harmless elsewhere. Source is mounted for hot reload.
+      - ./backend/app:/app/app:z
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

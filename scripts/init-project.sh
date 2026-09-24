@@ -4,6 +4,8 @@
 #
 #   ./scripts/init-project.sh my-app
 #   ./scripts/init-project.sh my-app --org someone-else
+#   ./scripts/init-project.sh my-app --blocks web --target pages   # a static site
+#   ./scripts/init-project.sh my-app --blocks api,postgres          # an API, no website
 #   ./scripts/init-project.sh my-app --no-remote     # local only, skip GitHub
 #   ./scripts/init-project.sh my-app --dry-run       # show, change nothing
 #   ./scripts/init-project.sh my-app --yes           # no prompts (CI/scripting)
@@ -14,9 +16,14 @@
 # with --no-remote for anything experimental. This is not hypothetical -- an
 # unwanted repo created exactly this way had to be deleted by hand.
 #
+# --blocks picks what the project is made of — web, api, worker, postgres —
+# (default web,api,postgres) and --target where it runs — pi-compose or pages
+# (default pi-compose). Everything else is deleted; see docs/BLOCKS.md.
+#
 # Does SETUP.md steps 1-4 in one go:
 #   1. strips the template's .git            (else your first push lands in it)
 #   2. replaces the placeholders             (project-template, CHANGEME*)
+#      and keeps only the chosen blocks
 #   3. git init, first commit, develop branch
 #   4. creates the GitHub repo and pushes BOTH branches   <- asks first
 #   5. writes .env with a real SECRET_KEY
@@ -40,8 +47,10 @@ ORG=""
 MAKE_REMOTE=1
 ASSUME_YES=0
 DRY_RUN=0
+BLOCKS="web,api,postgres"
+TARGET="pi-compose"
 
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +59,8 @@ while [ $# -gt 0 ]; do
     --no-remote) MAKE_REMOTE=0; shift ;;
     --yes|-y)    ASSUME_YES=1; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
+    --blocks)    BLOCKS="${2:?--blocks needs a value, e.g. web,api,postgres}"; shift 2 ;;
+    --target)    TARGET="${2:?--target needs a value: pi-compose or pages}"; shift 2 ;;
     -*)          echo "unknown flag: $1" >&2; usage 2 ;;
     *)           [ -z "$APP" ] || { echo "give exactly one app name" >&2; exit 2; }
                  APP="$1"; shift ;;
@@ -95,6 +106,14 @@ if [ "$APP" = "project-template" ]; then
   exit 2
 fi
 
+# The block choice is checked BEFORE anything is deleted: a typo in --blocks
+# must cost nothing.
+if ! block_err="$(python3 scripts/blocks.py set --blocks "$BLOCKS" --target "$TARGET" --dry-run 2>&1 >/dev/null)"; then
+  echo "${block_err#blocks: }" >&2
+  echo "(see docs/BLOCKS.md, or: python3 scripts/blocks.py status)" >&2
+  exit 2
+fi
+
 # --- guard: already initialised --------------------------------------------
 # Re-running would delete a real project's history. Placeholders gone plus a
 # remote that is not the template means this has already been through here.
@@ -136,6 +155,7 @@ HAS_GIT=0; [ -d .git ] && HAS_GIT=1
 cat <<MSG
 
   app name     ${APP}
+  blocks       ${BLOCKS//,/, }  on ${TARGET}
   directory    ${REPO}
   existing git $( [ "$HAS_GIT" = 1 ] && echo "yes (origin: ${ORIGIN}) — WILL BE DELETED" || echo "none" )
   remote       $( [ "$MAKE_REMOTE" = 1 ] && echo "github.com/${ORG}/${APP} (private)" || echo "skipped (--no-remote)" )
@@ -179,7 +199,8 @@ skip_dirs = {".git", "node_modules", "dist", ".venv", "__pycache__", "playwright
 # line -- observed as "line 157: MSG: No such file or directory" from a heredoc
 # that was fine. SETUP.md is excluded because it documents the template and
 # cites its real clone URL; substituting there leaves broken instructions.
-skip_files = {"SETUP.md", "init-project.sh", "check_agent_context.py", "test_agent_context.py"}
+skip_files = {"SETUP.md", "init-project.sh", "check_agent_context.py", "test_agent_context.py",
+              "blocks.py"}
 # Longest first: CHANGEME-app-label must not be eaten by CHANGEME-app.
 subs = [
     ("<App name>", app),
@@ -217,49 +238,54 @@ for p in sorted(changed):
 print(f"    ({len(changed)} files)")
 PY
 
+# --- 2b. blocks ------------------------------------------------------------
+echo "→ keeping blocks: ${BLOCKS//,/, } on ${TARGET}"
+python3 scripts/blocks.py set --blocks "$BLOCKS" --target "$TARGET" | sed 's/^/  /'
+eval "$(python3 scripts/blocks.py env)"
+# Template-only: these prove block combinations of the template, not of a project.
+rm -f scripts/check_preset.py scripts/tests/test_blocks.py
+
 # A README describing the template is not a README for this app.
-cat > README.md <<MSG
-# ${APP}
-
-$(printf '%s' "${APP}" | tr '[:lower:]-' '[:upper:] ' | cut -c1)$(printf '%s' "${APP}" | cut -c2- | tr '-' ' ') — a Docker Compose app on the Raspberry Pi 5, behind the shared
-Caddy and Cloudflare Tunnel. Vite/React frontend, FastAPI/Postgres backend.
-
+STACK_LINE="$(python3 scripts/blocks.py describe)"
+CHECKS="$(python3 scripts/blocks.py checks)"
+{
+  printf '# %s\n\n%s\n\n' "$APP" "$STACK_LINE"
+  if [ "$TARGET" = pages ]; then
+    cat <<MSG
+Not deployed yet. A push to \`main\` builds and publishes the site through
+\`.github/workflows/pages.yml\`, once Pages is enabled for the repository — see
+[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#github-pages).
+MSG
+  else
+    cat <<MSG
 Not deployed yet. Set \`PUBLIC_HOST\` in \`.env\` to the hostname you will serve
 it on, then follow [SETUP.md](./SETUP.md) step 6 — or
 [docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) if the server, tunnel and
 reverse proxy do not exist yet.
-
-## Run it locally
-
-\`\`\`bash
-cp .env.example .env          # already done by init-project.sh
-docker compose up --build
-docker compose exec backend python -m app.seed
-\`\`\`
-
-- frontend http://localhost:5173
-- backend  http://localhost:8000/api/health
-
-If those ports are taken, set \`DEV_WEB_PORT\` / \`DEV_API_PORT\` / \`DEV_DB_PORT\`
-in \`.env\`.
-
-## Checks
-
-\`\`\`bash
-cd backend  && pytest
-cd frontend && npm run typecheck && npm test && npm run build
-./scripts/e2e.sh              # the whole stack, for real
-\`\`\`
+MSG
+  fi
+  printf '\n## Run it locally\n\n```bash\ncp .env.example .env          # already done by init-project.sh\ndocker compose up --build\n'
+  [ "$HAS_POSTGRES" = 1 ] && printf 'docker compose run --rm migrate python -m app.seed\n'
+  printf '```\n\n'
+  [ "$HAS_WEB" = 1 ] && printf -- '- frontend http://localhost:5173\n'
+  [ "$HAS_API" = 1 ] && printf -- '- backend  http://localhost:8000/api/health\n'
+  [ "$HAS_WORKER" = 1 ] && printf -- '- worker   `docker compose logs -f worker`\n'
+  printf '\nIf those ports are taken, set `DEV_WEB_PORT` / `DEV_API_PORT` / `DEV_DB_PORT`\nin `.env`.\n'
+  printf '\n## Checks\n\n```bash\n%s\n./scripts/e2e.sh              # the whole stack, for real\n```\n' "$CHECKS"
+  cat <<'MSG'
 
 ## Where things are
 
 | | |
 |---|---|
 | How to develop here | [AGENTS.md](./AGENTS.md) or [CLAUDE.md](./CLAUDE.md) — same file, one per agent — and [docs/DEVELOPING.md](./docs/DEVELOPING.md) |
+| Blocks: what this project is made of, and adding one | [docs/BLOCKS.md](./docs/BLOCKS.md), `python3 scripts/blocks.py status` |
 | How it deploys | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
-| Backups | [docs/BACKUPS.md](./docs/BACKUPS.md) |
-| Remaining setup | [SETUP.md](./SETUP.md) — steps 6 onward (Pi, DNS, Caddy) |
 MSG
+  [ "$HAS_POSTGRES" = 1 ] && printf '| Backups | [docs/BACKUPS.md](./docs/BACKUPS.md) |\n'
+  [ "$TARGET" = pi-compose ] && printf '| Remaining setup | [SETUP.md](./SETUP.md) — steps 6 onward (Pi, DNS, Caddy) |\n'
+  true
+} > README.md
 echo "→ wrote a README for ${APP}"
 
 # --- 3. new history --------------------------------------------------------
@@ -270,17 +296,19 @@ git -c user.email="$(git config --global user.email || echo dev@localhost)" \
     -c user.name="$(git config --global user.name || echo dev)" \
     commit -q -m "chore: initial commit from project-template
 
-Scaffolded with scripts/init-project.sh. Carries the template's development
-environment: seed script, disposable e2e stack, alembic migrations, 8-job CI,
-instructions for both Codex and Claude Code, and a pull-based signed-tag deploy
-agent."
+Scaffolded with scripts/init-project.sh, blocks: ${BLOCKS//,/, } on ${TARGET}.
+Carries the template's development environment for those blocks: disposable
+e2e stack, block-gated CI, instructions for both Codex and Claude Code, and the
+target's deploy path."
 git branch develop
 echo "→ git history started: main + develop"
 
 # --- 5. local env (before the remote, so a failed push still leaves it) -----
 if [ ! -f .env ]; then
   cp .env.example .env
-  if command -v openssl >/dev/null 2>&1; then
+  if ! grep -q '^SECRET_KEY=' .env; then
+    echo "→ wrote .env (these blocks use no SECRET_KEY)"
+  elif command -v openssl >/dev/null 2>&1; then
     secret="$(openssl rand -hex 32)"
     # `|` as the delimiter: a hex secret cannot contain it, unlike `/`.
     sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${secret}|" .env
@@ -314,11 +342,21 @@ cat <<MSG
 Done. ${APP} is a project.
 
 Next, in order (SETUP.md has the detail):
-  1. docker compose up --build      # then: docker compose exec backend python -m app.seed
+  1. docker compose up --build$( [ "$HAS_POSTGRES" = 1 ] && echo "      # then: docker compose run --rm migrate python -m app.seed")
   2. ./scripts/e2e.sh               # proves the whole stack on a clean tree
   3. grep -rn CHANGEME .            # should find nothing outside SETUP.md
+MSG
+if [ "$TARGET" = pages ]; then cat <<MSG
+  4. Enable Pages with a workflow source:
+       gh api -X POST repos/${ORG:-<owner>}/${APP}/pages -f build_type=workflow
+     then push to main (./scripts/release.sh). docs/DEPLOYMENT.md § GitHub Pages
+MSG
+else cat <<MSG
   4. SETUP.md steps 6+              # .env on the Pi, DNS, Caddy block, deploy
   5. Choose ONE deploy model: deploy/ (recommended) or .github/workflows/deploy.yml
+MSG
+fi
+cat <<MSG
 
 You are on branch develop. Feature branches fork from here.
 MSG

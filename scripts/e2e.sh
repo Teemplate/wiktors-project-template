@@ -8,6 +8,10 @@
 #   ./scripts/e2e.sh --ui         # Playwright's UI mode (implies --keep)
 #   ./scripts/e2e.sh smoke.spec   # any extra args go to `playwright test`
 #
+# It exercises only the blocks this project has (blocks.json): the seed and
+# row-count checks need postgres, the /api proxy check needs web and api, the
+# browser tests need web, and a worker must reach a healthy heartbeat.
+#
 # Nothing here needs a secret. That is deliberate: CI runs this exact script,
 # and CI here is secretless. If a spec ever needs a real credential,
 # make it SKIP without one rather than fail -- see the pattern below.
@@ -16,6 +20,9 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
+
+# HAS_WEB, HAS_API, HAS_WORKER, HAS_POSTGRES, DATA_ROUTE — see scripts/blocks.py.
+eval "$(python3 scripts/blocks.py env)"
 
 # Derive the compose project from the directory name, so two copies of this
 # template on one machine cannot fight over container names.
@@ -39,7 +46,10 @@ API_URL="http://localhost:${API_PORT}"
 
 # Fail now, with a sentence a human can act on, rather than 90 seconds into a
 # build with an inscrutable docker networking error.
-for pair in "web:${WEB_PORT}" "api:${API_PORT}"; do
+PORTS=()
+[ "$HAS_WEB" = 1 ] && PORTS+=("web:${WEB_PORT}")
+[ "$HAS_API" = 1 ] && PORTS+=("api:${API_PORT}")
+for pair in "${PORTS[@]}"; do
   name="${pair%%:*}"; port="${pair##*:}"
   if ss -ltn 2>/dev/null | grep -q ":${port} "; then
     echo "port ${port} (${name}) is already in use." >&2
@@ -93,20 +103,46 @@ chmod 600 .env.e2e
 echo "→ building and starting the stack (project ${PROJECT})"
 "${COMPOSE[@]}" up -d --build
 
+wait_healthy() {   # a service with no port: trust its Docker healthcheck
+  local svc="$1" id
+  id="$("${COMPOSE[@]}" ps -q "$svc")"
+  for i in $(seq 1 60); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null)" = healthy ] && return 0
+    sleep 2
+  done
+  echo "$svc never became healthy" >&2
+  "${COMPOSE[@]}" logs --tail 40 "$svc" >&2
+  exit 1
+}
+
+if [ "$HAS_API" = 1 ]; then
 echo "→ waiting for the api"
 for i in $(seq 1 60); do
   curl -fsS -m 3 "${API_URL}/api/health" >/dev/null 2>&1 && break
   if [ "$i" = 60 ]; then
     echo "api never came up" >&2
-    "${COMPOSE[@]}" logs --tail 40 migrate backend >&2
+    "${COMPOSE[@]}" logs --tail 40 >&2   # every service: migrate may be the culprit
     exit 1
   fi
   sleep 2
 done
 
-echo "→ seeding"
-"${COMPOSE[@]}" exec -T backend python -m app.seed
+fi
 
+if [ "$HAS_POSTGRES" = 1 ]; then
+  echo "→ seeding"
+  # `migrate` is the postgres block's own one-shot, so this works whichever
+  # Python service the project has.
+  "${COMPOSE[@]}" run --rm -T migrate python -m app.seed
+fi
+
+if [ "$HAS_WORKER" = 1 ]; then
+  echo "→ waiting for the worker's heartbeat"
+  wait_healthy worker
+  echo "→ worker healthy"
+fi
+
+if [ "$HAS_WEB" = 1 ]; then
 echo "→ waiting for the web front end"
 for i in $(seq 1 60); do
   curl -fsS -m 3 -o /dev/null "${WEB_URL}/" && break
@@ -118,6 +154,9 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
+fi
+
+if [ "$HAS_API" = 1 ] && [ "$HAS_POSTGRES" = 1 ]; then
 # A seeded database is a PRECONDITION, not an assertion. Without this check
 # every UI test would pass vacuously against an empty list.
 COUNT=$(curl -fsS "${API_URL}/api/items" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
@@ -126,7 +165,9 @@ if [ "$COUNT" -lt 3 ]; then
   exit 1
 fi
 echo "→ ${COUNT} items seeded"
+fi
 
+if [ "$HAS_WEB" = 1 ] && [ "$HAS_API" = 1 ]; then
 # Prove the nginx /api proxy specifically. If this returns HTML, the SPA
 # fallback is swallowing /api/* and every browser test would fail with an
 # opaque JSON parse error instead of naming the real cause.
@@ -135,8 +176,16 @@ case "$CT" in
   application/json*) echo "→ /api proxied correctly through nginx" ;;
   *) echo "web /api/health returned '${CT}', not JSON — the nginx /api proxy is not working" >&2; exit 1 ;;
 esac
+fi
 
 # --- tests -----------------------------------------------------------------
+# Browser tests need a page. Without the web block, the checks above were the
+# whole suite.
+if [ "$HAS_WEB" != 1 ]; then
+  echo "→ no web block: stack checks passed, no browser tests to run"
+  exit 0
+fi
+
 cd frontend
 # Check for the PACKAGE, not the directory: a named-volume mount can leave an
 # empty, root-owned node_modules behind, so "does the directory exist" is true

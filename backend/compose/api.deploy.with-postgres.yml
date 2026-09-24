@@ -1,0 +1,9 @@
+# Glue: api + postgres. The app starts only after `migrate` exits zero, so a bad
+# revision aborts the deploy with the old containers still serving.
+services:
+  backend:
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully

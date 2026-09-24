@@ -11,9 +11,12 @@
 
 ## Stack
 
-Vite/React (TypeScript) frontend + FastAPI (async SQLAlchemy, Postgres) backend,
-deployed as a Docker Compose stack on the **Raspberry Pi 5** behind the shared
-Caddy and a Cloudflare Tunnel when configured. This template does not
+Built from **blocks** — `web` (Vite/React/TypeScript), `api` (FastAPI),
+`worker` (Python loop), `postgres` (async SQLAlchemy, Alembic) — deployed as a
+Docker Compose stack on the **Raspberry Pi 5** behind the shared Caddy and a
+Cloudflare Tunnel (`pi-compose`) or to GitHub Pages (`pages`). `blocks.json`
+says which this project has (`python3 scripts/blocks.py status`); the contract
+and how to add one: [docs/BLOCKS.md](./docs/BLOCKS.md). This template does not
 represent a live deployment. Set a real `PUBLIC_HOST` and record the adopted
 deployment model when creating an application.
 
@@ -27,7 +30,7 @@ back to the human as questions.
 | commit on a `feature/*` branch | yes |
 | `git push origin feature/<name>` | yes — a branch that exists only on this laptop is not backed up |
 | merge `--no-ff` into `develop`, `git push origin develop` | yes |
-| **deploy to staging** | yes — automatic *if you adopted `compose.staging.yml` + the `deploy/` agent*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
+| **deploy to staging** | yes — automatic *if you installed `app-deploy staging` (the `deploy/` agent)*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
 | cut `release/vX.Y.Z` → `main` + **signed** tag → merge back to `develop`, push all three | yes — via `./scripts/release.sh vX.Y.Z --yes` |
 | deploy that release to production | yes — **whichever of the two paths this project adopted**: the pull-based `app-deploy prod` (newest **signed** `v*` tag reachable from `origin/main`), or the self-hosted runner in `.github/workflows/deploy.yml`, or the manual compose command in § Deployment if neither is set up yet |
 
@@ -254,25 +257,34 @@ directly), `develop` = integration, `feature/*` off `develop`,
 (cut it with `./scripts/release.sh vX.Y.Z`, never by hand),
 `hotfix/*` off **`main`** → merged into **both**.
 
-**Checks before every merge:**
+**Checks before every merge** (`python3 scripts/blocks.py checks` lists them):
 
 ```bash
+python3 scripts/blocks.py check      # blocks, files and compose agree
+# block:api|worker|postgres
 cd backend  && pytest                # no database, no secrets needed
-cd frontend && npm run typecheck     # never `next lint` — it prompts interactively
-cd frontend && npm test              # vitest
+# /block
+# block:web
+cd frontend && npm run typecheck && npm test
+# /block
 ```
 
 **Also run `./scripts/e2e.sh`** when the change touches the API surface,
-`nginx.conf`, a migration or `app/seed.py`. It stands up a disposable stack
-(tmpfs Postgres, ports 5273/8273), migrates, seeds, and drives a real browser
-through the real nginx `/api` proxy — then tears it all down. It refuses to run
-the browser tests if the seed produced no rows, because against an empty list
-every UI assertion passes vacuously.
+`frontend/nginx/`, a compose fragment, a migration or `app/seed.py`. It stands up
+a disposable stack of this project's blocks (ports 5273/8273), migrates, seeds,
+and drives a real browser through the real nginx `/api` proxy — then tears it
+all down. It refuses to run the browser tests if the seed produced no rows,
+because against an empty list every UI assertion passes vacuously.
 
+Root compose files are generated: edit the fragments in `*/compose/`, then
+`python3 scripts/blocks.py sync`.
+
+<!-- block:postgres -->
 **Schema changes go through Alembic**, never `create_all()`. Autogenerate,
 review the file, and keep `app/seed.py` in step in the same commit. CI enforces
 exactly one migration head, a clean up-and-down against an empty database, and
 no `drop_table`/`drop_column` in `upgrade()` without a `destructive-ok` label.
+<!-- /block -->
 
 A fresh worktree has **no** gitignored files — no `.env`, no `node_modules`, no
 `.venv`. Symlink them or run the checks in the primary checkout.
@@ -358,6 +370,11 @@ is what binds first.
 
 ## Deployment
 
+<!-- block:pages -->
+Push to `main` → `.github/workflows/pages.yml` builds and publishes `frontend/`
+to GitHub Pages; `./scripts/release.sh` is the deploy. Verify the page itself.
+<!-- /block -->
+<!-- block:pi-compose -->
 Push to `main` → the Pi's self-hosted runner rebuilds and restarts, **gated on
 `/api/health`**. If that runner is not set up yet, deploy manually from the
 primary checkout:
@@ -378,9 +395,10 @@ docker --context pi-deploy compose -f compose.deploy.yml -p CHANGEME up -d --bui
   copied to the Pi. Editing it here and redeploying changes production config.
 - **Persistent data**: `/mnt/ssd/apps/CHANGEME/postgres-data`, bind-mounted.
 - **Public routing**: Cloudflare Tunnel → shared Caddy, whose block is
-  `http://CHANGEME.example.com { reverse_proxy CHANGEME-frontend:5173 }`. The
-  `http://` is deliberate: Cloudflare terminates TLS at its edge and Caddy has no
-  public port on which to complete an ACME challenge.
+  `http://CHANGEME.example.com { reverse_proxy CHANGEME-frontend:5173 }` (or
+  `CHANGEME-backend:8000` without `web`). The `http://` is deliberate: Cloudflare
+  terminates TLS at its edge and Caddy has no public port for an ACME challenge.
+<!-- /block -->
 
 ### Cutting a release — `./scripts/release.sh`
 
@@ -411,21 +429,10 @@ read it, rather than guessing.
 
 ⚠️ **A session runs this itself** — see § Shipping at the top of this file.
 
-This paragraph used to say the opposite: that a session "cannot run this, and
-cannot `git push origin main`", because of a blanket harness rule quoted as
-*"never push to main/master, force-push, or merge"*. **That was wrong, and it
-was wrong in an expensive way** — it was copied into several projects, where it
-stranded sessions holding finished, tested commits they believed they were
-forbidden to ship.
-
-Two things were being confused. It is true that **nothing in this file grants a
-permission**: project instructions override an agent's default behaviour, not
-its permission layer. But that layer is *configurable*, and the lever is one
-entry — `Bash(./scripts/release.sh:*)` in `.claude/settings.json`, or the
-matching `prefix_rule` in `.codex/rules/shipping.rules` — not an immovable
-property of the harness. Once that rule is present a session cuts and deploys
-the release; without it, it cannot, and no amount of prose here changes that
-either way.
+Why a session may run it — and why this file once said otherwise, expensively —
+is in [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#why-a-session-runs-the-release).
+The short version: nothing in this file grants a permission; the one
+`./scripts/release.sh` rule in each grant file does.
 
 **Be clear-eyed about what that rule grants.** The permission layer gates the
 `Bash` call, not what the script does inside it, so allowing

@@ -1,0 +1,22 @@
+# Block: worker — production and staging. Same image as the api (one build),
+# its own command. Health is the heartbeat file, not a port: a worker that is
+# running but stuck goes unhealthy, and deploy/app-deploy rolls back on that.
+services:
+  worker:
+    build:
+      context: ./backend
+    image: ${STACK:-${APP_NAME}}-backend
+    container_name: ${STACK:-${APP_NAME}}-worker
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [internal]
+
+networks:
+  internal:

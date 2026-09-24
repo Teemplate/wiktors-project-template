@@ -1,0 +1,12 @@
+# Block: web — e2e: the production nginx image, published on localhost so
+# Playwright can reach it.
+services:
+  web:
+    build:
+      context: ./frontend
+      target: prod
+      args:
+        # Empty: nginx proxies /api same-origin, exactly as in production.
+        VITE_API_BASE: ""
+    image: ${E2E_PROJECT:-app}-e2e-web:latest
+    ports: ["${E2E_WEB_PORT:-5273}:5173"]

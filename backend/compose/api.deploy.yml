@@ -1,0 +1,28 @@
+# Block: api — production and staging on the Pi. Included by compose.deploy.yml.
+# STACK is <app> for production and <app>-staging for staging (deploy/app-deploy
+# sets it), so the two never share a container, image or data directory.
+services:
+  backend:
+    build:
+      context: ./backend
+    image: ${STACK:-${APP_NAME}}-backend
+    container_name: ${STACK:-${APP_NAME}}-backend
+    restart: unless-stopped
+    # Read by the compose CLI on the machine running it, never copied to the Pi.
+    env_file: .env
+    healthcheck:
+      # python, not curl: the slim image has python and not curl, and adding
+      # curl purely for a healthcheck grows the production image for nothing.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [internal]
+
+networks:
+  internal:

@@ -1,6 +1,13 @@
+# Sections are owned by blocks (docs/BLOCKS.md). scripts/blocks.py removes a
+# section when the project does not have its block, so keep each dependency
+# inside the section of the block that needs it.
+pydantic-settings==2.7.0
+# block:api
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+# /block
+# block:postgres
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
-pydantic-settings==2.7.0
 alembic==1.14.0
+# /block

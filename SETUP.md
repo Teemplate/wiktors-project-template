@@ -149,11 +149,13 @@ curl -s localhost:${DEV_API_PORT:-8000}/api/items    # -> [] until you seed
 Then seed it, so the app has something to show:
 
 ```bash
-docker compose exec backend python -m app.seed
+docker compose run --rm migrate python -m app.seed
 ```
 
 `http://localhost:5173` should now list three items. The schema migrated itself
-on start — the backend container runs `alembic upgrade head` before uvicorn.
+on start — the one-shot `migrate` service runs `alembic upgrade head` and the
+backend waits for it. (That is the default `web,api,postgres` project; for
+other blocks, [docs/BLOCKS.md](./docs/BLOCKS.md) says what each one serves.)
 
 ## 5. Run the checks the way CI will
 
@@ -260,7 +262,8 @@ command is the deploy.
 
 ## 9. Optional extras, when the app earns them
 
-- **Staging** (`compose.staging.yml`): a second stack on `develop`. Worth it when
+- **Staging** (`compose.deploy.yml` with `STACK=<app>-staging`, via
+  `./deploy/install-agent.sh staging`): a second stack on `develop`. Worth it when
   a bad deploy would be destructive or hard to notice; it costs memory, disk and
   build time on a 4-core Pi, so it is not the default.
 - **Backups** ([docs/BACKUPS.md](./docs/BACKUPS.md)): the deploy agent already
