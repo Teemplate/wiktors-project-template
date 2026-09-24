@@ -39,7 +39,7 @@ cd "$REPO"
 
 # Where the template itself lives -- used only in help text, never as the
 # destination for the new project.
-TEMPLATE_URL="https://github.com/inspizzz/wiktors-project-template.git"
+TEMPLATE_URL="https://github.com/Teemplate/wiktors-project-template.git"
 
 APP=""
 # Empty = "whoever `gh` is logged in as", resolved below. --org overrides.

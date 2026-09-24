@@ -11,7 +11,7 @@ it pre-fixed.
 **This is a starting point, not a deployed app.**
 
 ```bash
-git clone --depth 1 https://github.com/inspizzz/wiktors-project-template.git my-app
+git clone --depth 1 https://github.com/Teemplate/wiktors-project-template.git my-app
 cd my-app && ./scripts/init-project.sh my-app                         # web, api, postgres
 #          ./scripts/init-project.sh my-app --blocks web --target pages   # a static site
 #          ./scripts/init-project.sh my-app --blocks worker               # a bot, no website
