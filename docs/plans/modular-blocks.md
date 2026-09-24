@@ -2,7 +2,7 @@
 feature: modular-blocks
 branch: feature/modular-blocks
 worktree: ../wiktors-project-template-modular-blocks
-stage: building
+stage: awaiting-deploy-approval
 design: n/a
 agent: none
 opened: 2026-09-24
@@ -56,4 +56,18 @@ None.
 
 ## Checks
 
-Pending.
+2026-09-24, on this branch:
+
+- `backend: pytest` (python:3.12-slim) — 10 passed. `frontend: typecheck,
+  test, build` — green, 6 unit tests.
+- `./scripts/e2e.sh` (all four blocks) — seed, worker heartbeat, nginx proxy,
+  7/7 Playwright.
+- `scripts/check_preset.py classic site web-api api worker bot --unit --e2e
+  --docker-python` — all six ok: each project installs only its own
+  requirements, passes its tests, and passes its own e2e stack.
+- `scripts/check_preset.py --all` — all seven presets init and validate
+  (`blocks.py check`, agent context, every generated compose file).
+- `scripts/tests/test_blocks.py` — 16 passed; `test_agent_context.py` — ok;
+  `check_agent_context.py --check-rules` — ok (27424/28672 bytes).
+- Drag and drop: a `bot` project, then `blocks.py add web,api,postgres --from
+  <template>` — `check` ok, and that project's own e2e 7/7.
