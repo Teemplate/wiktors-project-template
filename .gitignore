@@ -29,8 +29,6 @@ __pycache__/
 # and `git add -A` commits a link into your home directory.
 node_modules
 dist
-.next
-out
 
 # Test output
 playwright-report/

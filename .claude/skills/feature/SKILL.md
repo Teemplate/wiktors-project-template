@@ -195,7 +195,7 @@ git merge --no-ff feature/<feature>
 git push origin develop
 ```
 
-If `compose.staging.yml` is adopted, this lands on staging within ~60s. Mention
+If staging is adopted (`app-deploy staging` installed on the Pi), this lands on staging within ~60s. Mention
 it; do not wait on it.
 
 **3. Release.** Pick the version from `git describe --tags --abbrev=0`: a
@@ -217,7 +217,9 @@ self-hosted runner, or the manual `docker --context pi-deploy compose` in
 
 **5. Verify an `/api/*` route, not a page.** Pages return 200 even when the
 container cannot reach the backend. Check `/api/health`, and check
-`placeholder_secret` while you are there.
+`placeholder_secret` while you are there. Without the api block, verify what the
+project has instead (`blocks.json`): the page for `web`, the worker's healthy
+heartbeat for `worker`, the Pages deployment for the `pages` target.
 
 **6. Close out.** The merge brought the plan file onto `develop`, so set
 `stage: shipped` there and commit it directly — this is the one place the

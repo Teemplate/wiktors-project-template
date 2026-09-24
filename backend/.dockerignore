@@ -11,3 +11,7 @@ __pycache__/
 .env.*
 tests/
 .git/
+# Compose fragments and dev requirements are read on the host, never in the image.
+compose/
+requirements-dev.txt
+pytest.ini

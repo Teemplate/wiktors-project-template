@@ -1,0 +1,19 @@
+# Block: api — the disposable e2e stack (scripts/e2e.sh). Repo-relative and
+# secretless: .env.e2e is generated per run and holds only throwaway values.
+services:
+  backend:
+    build:
+      context: ./backend
+    image: ${E2E_PROJECT:-app}-e2e-backend:latest
+    env_file: [.env.e2e]
+    ports: ["${E2E_API_PORT:-8273}:8000"]
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s

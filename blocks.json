@@ -1,0 +1,105 @@
+{
+  "_comment": [
+    "Which blocks this project is made of, and which files each block owns.",
+    "docs/BLOCKS.md is the contract; scripts/blocks.py acts on this file.",
+    "",
+    "selected/target: what this project uses. Change them with",
+    "  python3 scripts/blocks.py set --blocks web,api --target pi-compose   (remove)",
+    "  python3 scripts/blocks.py add worker --from <template checkout>      (add)",
+    "never by hand: both also delete or copy files and regenerate compose.",
+    "",
+    "files: a path is KEPT only if every rule whose pattern matches it is satisfied.",
+    "'when' is block names joined by + (all of them) or | (any of them); a target",
+    "name counts as selected when it is the project's target. Unmatched paths",
+    "belong to every project. A pattern is a file, a directory (everything under",
+    "it) or a glob.",
+    "",
+    "marked: files holding '# block:<when>' ... '# /block' sections (or the",
+    "<!-- --> form in Markdown); a section is removed with its block."
+  ],
+  "version": 1,
+  "selected": ["web", "api", "worker", "postgres"],
+  "target": "pi-compose",
+  "blocks": {
+    "web": {
+      "summary": "React 18 + Vite + TypeScript site, served by nginx",
+      "checks": ["cd frontend && npm run typecheck", "cd frontend && npm test", "cd frontend && npm run build"]
+    },
+    "api": {
+      "summary": "FastAPI service under /api (Python 3.12)",
+      "checks": ["cd backend && pytest"]
+    },
+    "worker": {
+      "summary": "Python background loop, healthy while its heartbeat is fresh",
+      "checks": ["cd backend && pytest"]
+    },
+    "postgres": {
+      "summary": "Postgres 16 with Alembic migrations and a seed",
+      "requires_any": ["api", "worker"],
+      "checks": ["cd backend && pytest"]
+    }
+  },
+  "targets": {
+    "pi-compose": {
+      "summary": "Docker Compose on the Raspberry Pi, behind the shared Caddy and a Cloudflare Tunnel",
+      "allows": ["web", "api", "worker", "postgres"]
+    },
+    "pages": {
+      "summary": "static site on GitHub Pages, deployed by .github/workflows/pages.yml",
+      "allows": ["web"]
+    }
+  },
+  "files": [
+    {"when": "web", "paths": ["frontend"]},
+    {"when": "web+api", "paths": [
+      "frontend/compose/web.*.with-api.yml",
+      "frontend/nginx/snippets/api-proxy.conf.template",
+      "frontend/src/features/hello",
+      "frontend/e2e/api.spec.ts"
+    ]},
+    {"when": "web+api+postgres", "paths": [
+      "frontend/src/features/items",
+      "frontend/e2e/items.spec.ts"
+    ]},
+    {"when": "api|worker|postgres", "paths": ["backend"]},
+    {"when": "api", "paths": [
+      "backend/app/main.py",
+      "backend/app/routes",
+      "backend/tests/test_health.py",
+      "backend/compose/api.*"
+    ]},
+    {"when": "api+postgres", "paths": [
+      "backend/app/routes/items.py",
+      "backend/compose/api.*.with-postgres.yml"
+    ]},
+    {"when": "worker", "paths": [
+      "backend/app/worker.py",
+      "backend/tests/test_worker.py",
+      "backend/compose/worker.*"
+    ]},
+    {"when": "worker+postgres", "paths": ["backend/compose/worker.*.with-postgres.yml"]},
+    {"when": "postgres", "paths": [
+      "backend/app/db.py",
+      "backend/app/models.py",
+      "backend/app/seed.py",
+      "backend/migrations",
+      "backend/alembic.ini",
+      "backend/tests/test_seed.py",
+      "backend/compose/postgres.*",
+      "scripts/check_migration_safety.py"
+    ]},
+    {"when": "pi-compose", "paths": [
+      "deploy",
+      ".github/workflows/deploy.yml"
+    ]},
+    {"when": "pages", "paths": [".github/workflows/pages.yml"]}
+  ],
+  "marked": [
+    ".env.example",
+    "backend/requirements.txt",
+    "backend/Dockerfile",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".claude/agents/feature-dev.md"
+  ]
+}

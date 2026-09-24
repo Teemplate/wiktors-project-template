@@ -9,13 +9,17 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
-# Migrations ship in the image: the deploy runs `alembic upgrade head` in a
-# one-shot container built from this same image, before the app starts.
-COPY alembic.ini ./
-COPY migrations ./migrations
+# Everything .dockerignore lets through: app/, and with the postgres block
+# alembic.ini + migrations/ — the deploy runs `alembic upgrade head` in a
+# one-shot container built from this same image, before the app starts. One
+# COPY rather than a line per path, because which paths exist depends on the
+# project's blocks (docs/BLOCKS.md).
+COPY . .
 
+# One image, several services: api, worker and migrate each set their own
+# `command:` in their compose fragment. This default is the api's.
+# block:api
 EXPOSE 8000
-
 # No --reload in production.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# /block

@@ -1,0 +1,12 @@
+# The api is this project's public block (there is no web block), so it joins
+# the shared `web` network and Caddy targets it directly:
+#     http://<app>.example.com { reverse_proxy <app>-backend:8000 }
+# Only included when there is no web block: joining `web` also publishes the
+# service alias `backend` on a network every app shares.
+services:
+  backend:
+    networks: [web, internal]
+
+networks:
+  web:
+    external: true

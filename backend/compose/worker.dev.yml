@@ -1,0 +1,19 @@
+# Block: worker — local development. A loop with no port: see app/worker.py.
+services:
+  worker:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      - WORKER_INTERVAL_SECONDS=${WORKER_INTERVAL_SECONDS:-30}
+    volumes:
+      # Mounted for editing; unlike uvicorn --reload the loop does not restart
+      # itself — `docker compose restart worker` picks up a change.
+      - ./backend/app:/app/app:z
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

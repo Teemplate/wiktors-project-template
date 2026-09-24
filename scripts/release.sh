@@ -86,6 +86,9 @@ fi
 AHEAD=$(git rev-list --count "origin/main..origin/develop")
 [[ "$AHEAD" -ne 0 ]] || die "origin/develop has nothing origin/main lacks — nothing to release"
 
+# Where this project runs (blocks.json): the pages target publishes itself.
+TARGET="$(python3 -c 'import json; print(json.load(open("blocks.json"))["target"])' 2>/dev/null || echo pi-compose)"
+
 # Is the runner actually going to pick this up? Best-effort: gh may be missing or
 # unauthenticated, in which case say so rather than guess either way.
 DEPLOY_STATE="unknown"
@@ -100,7 +103,11 @@ echo "release: $VERSION"
 echo "  $AHEAD commit(s) from develop will be tagged and pushed to main:"
 git log --oneline --no-decorate "origin/main..origin/develop" | sed 's/^/    /'
 echo
+if [ "$TARGET" = pages ]; then
+  DEPLOY_STATE="pages"
+fi
 case "$DEPLOY_STATE" in
+  pages) echo "  pages target — the push to main publishes the site (.github/workflows/pages.yml)." ;;
   on)  echo "  SELF_HOSTED_DEPLOY=true — the push to main WILL rebuild production." ;;
   off) echo "  SELF_HOSTED_DEPLOY is not true — pushing main will NOT deploy."
        echo "  You will still need the manual compose command afterwards." ;;
@@ -161,6 +168,13 @@ if [[ $DRY_RUN -eq 1 ]]; then
 fi
 
 echo "release: $VERSION is on main."
+if [ "$TARGET" = pages ]; then
+  echo "The pages target deploys itself: .github/workflows/pages.yml publishes main."
+  echo "  gh run watch \$(gh run list --workflow=pages.yml -L1 --json databaseId -q '.[0].databaseId')"
+  echo "It is skipped until Pages is enabled for the repository (docs/DEPLOYMENT.md § GitHub Pages)."
+  echo "Then load the site itself — the workflow going green is not the page serving."
+  exit 0
+fi
 case "$DEPLOY_STATE" in
   on)
     echo "The runner should be building now:"
@@ -176,5 +190,6 @@ case "$DEPLOY_STATE" in
 esac
 echo
 echo "Then verify an /api/* route, not just a page — a page returns 200 even when"
-echo "the container cannot reach the backend at all. Codes that are correctly not"
-echo "200 for this app are recorded in AGENTS.md under 'Health checks'."
+echo "the container cannot reach the backend at all. (No api block? Check what the"
+echo "project has: the page, or the worker's heartbeat.) Codes that are correctly"
+echo "not 200 for this app are recorded in AGENTS.md under 'Health checks'."

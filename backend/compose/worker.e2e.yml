@@ -1,0 +1,16 @@
+# Block: worker — e2e. A short interval so the heartbeat goes healthy within
+# seconds; scripts/e2e.sh waits for exactly that.
+services:
+  worker:
+    build:
+      context: ./backend
+    image: ${E2E_PROJECT:-app}-e2e-backend:latest
+    env_file: [.env.e2e]
+    environment:
+      - WORKER_INTERVAL_SECONDS=2
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--check"]
+      interval: 3s
+      timeout: 5s
+      retries: 20

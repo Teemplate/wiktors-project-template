@@ -1,0 +1,7 @@
+# Glue: web + api. Turns on the Vite /api proxy (vite.config.ts).
+services:
+  frontend:
+    environment:
+      - API_PROXY_TARGET=http://backend:8000
+    depends_on:
+      - backend
