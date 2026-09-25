@@ -3,14 +3,24 @@ name: CI
 # Runs on GitHub's hosted runners, so a broken commit is caught before it ever
 # reaches the Pi. These are the cheap checks that would otherwise only fail at
 # deploy time, when the site is already down.
+#
+# A private project spends its account's monthly Actions minutes here, and every
+# job bills at least one minute, rounded up (docs/DEVELOPING.md § Actions
+# minutes). So pushes are checked only on develop and main; feature, release and
+# hotfix branches are checked by their PR, and experimental/** never, because
+# research branches never merge (docs/DEVELOPING.md § 2).
 on:
   push:
-    # experimental/** is left out on purpose: research branches never merge
-    # (docs/DEVELOPING.md § 2), so product CI has nothing to guard there.
-    branches: [main, develop, "feature/**", "release/**", "hotfix/**"]
+    branches: [main, develop]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
+
+# A newer push to the same branch or PR supersedes a running check, except on
+# main, where every commit is a release and keeps its result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Which blocks this project has (blocks.json, docs/BLOCKS.md). Every job that

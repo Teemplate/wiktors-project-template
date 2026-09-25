@@ -164,10 +164,50 @@ tests unless the seed produced rows** — against an empty list every UI
 assertion passes vacuously. With `worker` it waits for a healthy heartbeat.
 Without `web` the stack checks are the whole suite.
 
-CI runs the fast checks on every push and PR. The e2e suite runs nightly, on
-demand, and on any PR labelled `run-e2e` — it is deliberately not a required
-check, because a gate people learn to wait out is a gate they learn to ignore.
-Keep everything secret-free: a fresh clone with no `.env` must pass.
+CI runs the fast checks on pushes to `develop` and `main` and on every PR —
+not on feature-branch pushes, so run the relevant checks locally before you
+merge. The e2e suite runs weekly, on demand, and on any PR labelled `run-e2e` —
+it is deliberately not a required check, because a gate people learn to wait
+out is a gate they learn to ignore. Keep everything secret-free: a fresh clone
+with no `.env` must pass.
+
+### Actions minutes
+
+Projects made from this template are usually **private**, and private
+repositories share the account's monthly allowance of GitHub-hosted Actions
+minutes (3,000 on GitHub Pro; public repositories and self-hosted runners cost
+nothing). The account has a **$0 Actions budget with "stop usage" on**, so
+running out costs nothing but **stops every hosted workflow in every private
+repo until the 1st of the month**, including CI that a deploy waits on. In
+September 2026 the estate reached 90% by the 25th. The causes, and the rules
+that follow from them:
+
+- **Every job bills at least one minute, rounded up.** A workflow of five
+  ten-second jobs costs five minutes. Put a new cheap check in an existing job
+  as a step (with `if: ${{ !cancelled() }}` so one failure does not hide the
+  next) rather than adding a job. Jobs skipped by an `if:` cost nothing, which
+  is why `ci.yml` gates each job on the blocks present.
+- **Trigger on the branches that matter.** `ci.yml` runs on `develop`, `main`
+  and PRs, with `concurrency` cancelling a superseded run. Do not add
+  `feature/**` back to `push`: agent sessions push often, and that alone spent
+  hundreds of minutes a month per active project.
+- **Schedules are paid for every time.** `e2e.yml` runs weekly. A scheduled
+  job that must stay on GitHub's runners (a monitor that alerts when the Pi is
+  offline) still bills a minute per run: hourly is ~720 minutes a month,
+  every three hours ~240.
+- **Filter checks by path.** `agent-context.yml` runs only when agent context
+  or documents change.
+- **Heavy or frequent CI can run on the Pi.** A self-hosted runner
+  ([DEPLOYMENT.md](DEPLOYMENT.md#self-hosted-runner-what-githubworkflowsdeployyml-expects))
+  costs no minutes. The Pi is Ubuntu on arm64: `actions/setup-node` works, but
+  `actions/setup-python` has no builds for it, so install Python with `uv`
+  (`astral-sh/setup-uv`, then `uv venv --python 3.12 "$RUNNER_TEMP/venv"`) and
+  keep the venv outside the checkout. Jobs share the Pi with production and run
+  one at a time. Only a private repository may use it, because a PR's code runs
+  on the Pi.
+
+Check usage at <https://github.com/settings/billing/usage>, and per workflow
+with `gh run list`.
 
 ## 4a. Schema changes
 
