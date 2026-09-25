@@ -29,6 +29,7 @@ back to the human as questions.
 |---|---|
 | commit on a `feature/*` branch | yes |
 | `git push origin feature/<name>` | yes — a branch that exists only on this laptop is not backed up |
+| commit on and `git push origin experimental/<name>` | yes — research branches; they **never merge** (`docs/DEVELOPING.md` § 2) |
 | merge `--no-ff` into `develop`, `git push origin develop` | yes |
 | **deploy to staging** | yes — automatic *if you installed `app-deploy staging` (the `deploy/` agent)*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
 | cut `release/vX.Y.Z` → `main` + **signed** tag → merge back to `develop`, push all three | yes — via `./scripts/release.sh vX.Y.Z --yes` |
@@ -73,6 +74,9 @@ sitting on disk looking active. Reading that list as work in flight goes wrong
 both ways: a stale `feature/*` name invites you to skip something nobody has
 actually built, and the branches that *do* hold unmerged commits are buried
 among them. Settle it with `git rev-list --count develop..<branch>`.
+`experimental/*` branches always appear there and are never in flight for a
+release — they hold research that does not merge, so neither wait for nor
+merge nor delete them.
 
 And treat the answer as a **snapshot, not a fact** — another session can commit
 between your check and your release. Run it immediately before you cut, not once
