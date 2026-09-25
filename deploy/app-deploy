@@ -186,8 +186,11 @@ fi
 
 # -------------------------------------------------------------------- backup --
 
-PGUSER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
-PGDB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
+# `|| true`: without postgres these keys are absent, grep exits 1, and under
+# `set -euo pipefail` the bare assignment killed the agent silently, right after
+# a successful build — no log line, nothing deployed.
+PGUSER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || true)
+PGDB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || true)
 DUMP="${BACKUP_DIR}/predeploy-$(date +%Y%m%d-%H%M%S).dump"
 
 if ! has postgres; then
