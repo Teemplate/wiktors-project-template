@@ -231,9 +231,13 @@ healthy() {
 }
 
 # The one thing that proves this project is serving — whichever blocks it has.
+# Frontend checks use 127.0.0.1, never localhost: nginx listens on IPv4 only,
+# Alpine resolves localhost to ::1 first, and busybox wget does not fall back —
+# so a localhost check is refused while the site serves fine, and every deploy
+# with a web block rolled back.
 serving() {
   if has api; then py_get "$BACKEND_C" "${DATA_ROUTE:-/api/health}"
-  elif has web; then docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://localhost:5173/
+  elif has web; then docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://127.0.0.1:5173/
   else healthy "$WORKER_C"
   fi
 }
@@ -294,13 +298,13 @@ if has api; then
   fi
 fi
 if has web; then
-  check "frontend /"            docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://localhost:5173/ \
+  check "frontend /"            docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 http://127.0.0.1:5173/ \
     || rollback "frontend never rendered"
 fi
 if has web && has api; then
   # The nginx /api proxy specifically: if the SPA fallback swallows /api/*, this
   # returns HTML with a 200 and the site looks fine while being entirely broken.
-  check "frontend /api proxy"   docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 "http://localhost:5173/api/health" \
+  check "frontend /api proxy"   docker exec "$FRONTEND_C" wget -q -O /dev/null -T 10 "http://127.0.0.1:5173/api/health" \
     || rollback "the frontend's /api proxy is not reaching the backend"
 fi
 if has worker; then
