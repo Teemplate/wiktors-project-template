@@ -85,6 +85,14 @@ def check(name: str, unit: bool, e2e: bool, docker_python: bool, keep: bool) -> 
         (project / ".env.e2e").unlink()
         has_deploy = (project / "compose.deploy.yml").exists()
         assert has_deploy == (target == "pi-compose"), "compose.deploy.yml does not match the target"
+        if has_deploy:
+            # The installer refuses while APP is still the placeholder. init rewrites
+            # placeholders everywhere, so a literal guard turned into "refuse the real
+            # name" and every generated project's installer refused to run.
+            agent = (project / "deploy/app-deploy").read_text()
+            assert f'APP="{app}"' in agent, "init did not set APP in deploy/app-deploy"
+            installer = (project / "deploy/install-agent.sh").read_text()
+            assert f'= "{app}" ]' not in installer, "install-agent.sh would refuse the real app name"
 
         if unit:
             unit_checks(project, docker_python)
