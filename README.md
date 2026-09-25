@@ -48,7 +48,7 @@ what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 | `frontend/nginx/` | SPA fallback, and — with the api block — **the `/api` proxy**: without it `/api/*` returns `index.html` and the frontend can never reach its backend |
 | `*/.dockerignore` | **Both present deliberately** — a missing one shipped a 1.1 GB context over SSH and overwrote an arm64 install with x86-64 binaries, twice |
 | `.github/workflows/ci.yml` | Gated on the blocks present: tests, typecheck, build, one-alembic-head, migrations up/down, destructive-migration guard, images, gitleaks, agent instructions — and, in the template, a project cut per block combination |
-| `.github/workflows/e2e.yml` | The full stack: nightly, on demand, or on a `run-e2e` label |
+| `.github/workflows/e2e.yml` | The full stack: weekly, on demand, or on a `run-e2e` label |
 | `.github/workflows/deploy.yml` | The *alternative* deploy model (self-hosted runner). Pick this **or** `deploy/`, not both |
 | `.github/workflows/pages.yml` | The `pages` target: build and publish `frontend/` on every push to `main` |
 | `scripts/check_preset.py` | Template only: init a project per block combination and check it (`--unit`, `--e2e`) |

@@ -1,8 +1,28 @@
 name: Agent context
 
+# Only when agent context or a document it links to changes: running on every
+# push to every branch cost a hosted Actions minute each time for nothing.
 on:
   push:
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '**/*.md'
+      - '.agent-context.json'
+      - 'scripts/check_agent_context.py'
+      - '.github/workflows/agent-context.yml'
+      - '.claude/**'
+      - '.codex/**'
   pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '**/*.md'
+      - '.agent-context.json'
+      - 'scripts/check_agent_context.py'
+      - '.github/workflows/agent-context.yml'
+      - '.claude/**'
+      - '.codex/**'
   workflow_dispatch:
 
 permissions:
