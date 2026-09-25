@@ -49,6 +49,8 @@
       "Bash(git push origin feature/:*)",
       "Bash(git push -u origin feature/:*)",
       "Bash(git push --set-upstream origin feature/:*)",
+      "Bash(git push origin experimental/:*)",
+      "Bash(git push -u origin experimental/:*)",
       "Bash(git push origin fix/:*)",
       "Bash(git push -u origin fix/:*)",
       "Bash(git push origin hotfix/:*)",

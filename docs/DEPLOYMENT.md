@@ -155,8 +155,25 @@ Set up, on the Pi:
 # 2. On the Pi:
 mkdir -p /mnt/ssd/apps/<app>/{env,state,backups}
 install -m 600 /dev/stdin /mnt/ssd/apps/<app>/env/app.env   # paste the real .env
-git clone <read-only deploy key URL> /mnt/ssd/apps/<app>/src
+git clone --single-branch --branch main <read-only deploy key URL> /mnt/ssd/apps/<app>/src
+git -C /mnt/ssd/apps/<app>/src config --add remote.origin.fetch \
+  '+refs/heads/develop:refs/remotes/origin/develop'   # staging tracks develop
 cd /mnt/ssd/apps/<app>/src && ./deploy/install-agent.sh prod
+```
+
+**Production hosts fetch only `main`** (and `develop`, for staging). A deploy host needs `main` (prod's signed tag) and `develop` (staging) —
+nothing else. The clone above is limited to those two, and `app-deploy` fetches
+them by explicit refspec on every tick, so `feature/*` and especially
+`experimental/*` branches (research that can carry large data and never
+deploys; see `DEVELOPING.md` § 2) never land on the Pi. A host cloned the old
+way keeps stale refs until you narrow it once:
+
+```bash
+git config --replace-all remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
+git config --add remote.origin.fetch '+refs/heads/develop:refs/remotes/origin/develop'
+git for-each-ref --format='%(refname)' refs/remotes/origin \
+  | grep -vE '^refs/remotes/origin/(main|develop|HEAD)$' | xargs -r -n1 git update-ref -d
+git gc --prune=now
 ```
 
 What each step of the agent is for — none of it is decoration:

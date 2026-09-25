@@ -5,6 +5,8 @@ name: CI
 # deploy time, when the site is already down.
 on:
   push:
+    # experimental/** is left out on purpose: research branches never merge
+    # (docs/DEVELOPING.md § 2), so product CI has nothing to guard there.
     branches: [main, develop, "feature/**", "release/**", "hotfix/**"]
   pull_request:
     branches: [main, develop]

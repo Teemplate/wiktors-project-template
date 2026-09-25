@@ -131,7 +131,13 @@ cd "$SRC"
 exec 9>"$LOCK"
 flock -n 9 || { echo "another deploy holds the lock; skipping this tick" >&2; exit 0; }
 
-git fetch --quiet --prune --tags origin
+# Only the two branches this agent reads (origin/main for prod's tag, origin/
+# develop for staging) — never feature/* or experimental/* (research branches
+# that can carry large data and never deploy). Explicit refspecs override the
+# clone's `+refs/heads/*` default, and --prune then touches only these two.
+git fetch --quiet --prune --tags origin \
+  "+refs/heads/main:refs/remotes/origin/main" \
+  "+refs/heads/develop:refs/remotes/origin/develop"
 
 # ------------------------------------------------------------ resolve target --
 
