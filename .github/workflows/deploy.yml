@@ -71,7 +71,7 @@ jobs:
           raise SystemExit(0 if h.get('ok') else 1)
           "
             elif [ "$HAS_WEB" = 1 ]; then
-              docker exec ${APP_NAME}-frontend wget -q -O /dev/null -T 5 http://localhost:5173/
+              docker exec ${APP_NAME}-frontend wget -q -O /dev/null -T 5 http://127.0.0.1:5173/
             else
               [ "$(docker inspect -f '{{.State.Health.Status}}' ${APP_NAME}-worker)" = healthy ]
             fi
