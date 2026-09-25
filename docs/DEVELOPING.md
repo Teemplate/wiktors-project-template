@@ -65,6 +65,18 @@ What a worktree does and does not isolate:
 | `feature/<name>` | `develop` | `develop` | never interacts with `main` |
 | `release/vX.Y.Z` | `develop` | `main` **and** `develop` | no new features — fixes, docs, release chores; `main` gets the tag |
 | `hotfix/<name>` | **`main`** | `main` **and** `develop` | the only branch forking off `main` |
+| `experimental/<name>` | `develop` | **nothing** | research, not product — see below |
+
+**`experimental/<name>` is research that never ships**: prototypes, spikes,
+benchmarks, parameter sweeps, the data they produce. It never merges into
+`develop` or `main`, CI does not run on it, and it is pushed for backup only.
+It is **not** unfinished feature work: it shows up in
+`git branch -a --no-merged develop` by design, so never "finish", merge or
+delete one as cleanup. When something on it turns out to be worth shipping,
+the code leaves on a fresh `feature/<name>` off `develop` carrying just that
+code — never the branch itself, which drags its data along. Keep production
+hosts from downloading these branches at all by fetching only what they
+deploy (`DEPLOYMENT.md` § Production hosts fetch only `main`).
 
 Commit messages are conventional: `feat(scope): …`, `fix(scope): …`,
 `docs(dev): …`. Merge commits read `Merge feature/<name> into develop`.

@@ -89,6 +89,7 @@ prefix_rule(
     decision = "allow",
     match = [
         ["git", "push", "origin", "feature/api-tokens"],
+        ["git", "push", "origin", "experimental/gpu-sweep"],
         ["git", "push", "origin", "develop"],
     ],
     not_match = [
