@@ -5,7 +5,7 @@
 Steps 1–5 below are scripted. From a fresh copy of the template:
 
 ```bash
-git clone --depth 1 https://github.com/inspizzz/wiktors-project-template.git my-app
+git clone --depth 1 https://github.com/Teemplate/wiktors-project-template.git my-app
 cd my-app
 ./scripts/init-project.sh my-app
 ```
@@ -44,7 +44,7 @@ something that has already gone wrong on a real deployment.
 ## 1. Get a copy and give it a name
 
 ```bash
-git clone --depth 1 https://github.com/inspizzz/wiktors-project-template.git <app>
+git clone --depth 1 https://github.com/Teemplate/wiktors-project-template.git <app>
 cd <app>
 rm -rf .git          # step 2 starts a fresh history; see below
 ```

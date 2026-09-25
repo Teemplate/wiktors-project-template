@@ -1,8 +1,8 @@
 ---
 feature: modular-blocks
 branch: feature/modular-blocks
-worktree: ../wiktors-project-template-modular-blocks
-stage: awaiting-deploy-approval
+worktree: removed
+stage: shipped
 design: n/a
 agent: none
 opened: 2026-09-24
