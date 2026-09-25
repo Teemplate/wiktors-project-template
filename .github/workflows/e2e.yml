@@ -7,7 +7,7 @@ name: E2E
 # every PR to re-prove that the list still renders would make the fast checks
 # feel slow, and a gate people learn to wait out is a gate they learn to ignore.
 #
-# So: nightly against develop, on demand, and on any PR carrying the `run-e2e`
+# So: weekly against develop, on demand, and on any PR carrying the `run-e2e`
 # label -- which is the one to reach for when touching the API surface, the
 # nginx config, a migration, or the seed.
 #
@@ -16,7 +16,7 @@ name: E2E
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * 1"   # weekly (Monday): nightly cost ~30 runs of Actions minutes a month
   workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, labeled]

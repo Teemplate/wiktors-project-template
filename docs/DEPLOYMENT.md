@@ -132,6 +132,11 @@ so a container that starts and dies is not reported as a success. Secrets stay
 on the Pi — the workflow symlinks `/mnt/ssd/apps/<app>/.env` into the checkout
 rather than using GitHub secrets.
 
+The same runner can also run CI, which then costs no Actions minutes
+([DEVELOPING.md § Actions minutes](DEVELOPING.md#actions-minutes)). Register it
+as a systemd **user** unit with linger enabled; the Pi has no passwordless sudo,
+so the runner's `svc.sh install` cannot run over SSH.
+
 ### Pull-based, signed-tag deploys — **shipped in this template, and recommended**
 
 `deploy/app-deploy` is a complete agent; `deploy/install-agent.sh` installs it.

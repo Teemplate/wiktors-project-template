@@ -494,7 +494,9 @@ put detailed reference material in linked files. Fresh clones must have all
 required public context without machine-specific notes or credentials.
 
 Run `python3 scripts/check_agent_context.py` before finishing instruction or
-configuration changes; the same check runs in `.github/workflows/agent-context.yml`.
+configuration changes; `.github/workflows/agent-context.yml` runs it when agent
+context changes. CI spends limited Actions minutes: see `docs/DEVELOPING.md` §
+Actions minutes before adding a job, trigger or schedule.
 `.agent-context.json` records the development base and required reference files.
 If this project has Codex command rules, also run the checker with `--check-rules`.
 
