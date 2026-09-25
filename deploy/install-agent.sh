@@ -20,8 +20,12 @@ esac
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$(grep -E '^APP="' "$REPO/deploy/app-deploy" | head -1 | cut -d'"' -f2)"
-if [ "$APP" = "CHANGEME-app" ]; then
-  echo "deploy/app-deploy still says APP=\"CHANGEME-app\". Set it first." >&2
+# The placeholder is spelled in two halves on purpose: init-project.sh replaces
+# every literal CHANGEME-app with the project's name, which turned a plain
+# comparison into "refuse if APP is the real name" in every generated project.
+PLACEHOLDER="CHANGEME""-app"
+if [ "$APP" = "$PLACEHOLDER" ]; then
+  echo "deploy/app-deploy still says APP=\"$PLACEHOLDER\". Set it first." >&2
   exit 2
 fi
 
