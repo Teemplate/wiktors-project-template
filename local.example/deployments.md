@@ -10,13 +10,14 @@ empty one: it gets believed.
 
 | App | URL | Target | Compose project | Deploy model | Data |
 |---|---|---|---|---|---|
-| `<app>` | `https://<app>.<example.com>` | `<server>` | `<app>` | signed-tag agent / runner / manual | `<path>` |
+| `<app>` | `https://<app>.<example.com>` | `<server>` | `<app>` | deploy agent (`scripts/deploy.sh`) / manual | `<path>` |
 
 ## Redeploy
 
 ```bash
-# Pull-based agent: push a signed tag, the server picks it up within 60s.
-git tag -s vX.Y.Z -m "..." && git push origin vX.Y.Z
+# Deploy agent: the session that ships runs it; nothing on the server polls.
+./scripts/release.sh vX.Y.Z --yes   # signed tag, push, then deploys prod
+./scripts/deploy.sh staging         # after pushing develop
 
 # Manual, from the primary checkout on main — never from a worktree:
 docker --context <lan-alias> compose -f compose.deploy.yml -p <app> up -d --build

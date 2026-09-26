@@ -21,7 +21,7 @@ later without hand-editing every cross-cutting file.
 
 | target | runs | allows |
 |---|---|---|
-| `pi-compose` | Docker Compose on the Pi, behind the shared Caddy + Cloudflare Tunnel; `deploy/` agent or self-hosted runner | every block |
+| `pi-compose` | Docker Compose on the Pi, behind the shared Caddy + Cloudflare Tunnel; `deploy/` agent, run by `scripts/deploy.sh` | every block |
 | `pages` | GitHub Pages, `.github/workflows/pages.yml` on every push to `main` | `web` only |
 
 `api`, `worker` and `postgres` are one Python package and one image: `backend/`

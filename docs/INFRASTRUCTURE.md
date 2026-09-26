@@ -423,9 +423,9 @@ server.
 ## 9. Signing keys — required for production deploys
 
 `deploy/app-deploy` refuses to deploy a production tag unless `git verify-tag`
-passes. **Skip this and production silently deploys nothing**, logging only
-`tag ... is not signed` while staging keeps working — a genuinely confusing
-failure. SSH signing is the least painful route.
+passes. **Skip this and every production deploy fails** with `refusing to
+deploy vX.Y.Z: signature missing` while staging keeps working — a confusing
+failure the first time. SSH signing is the least painful route.
 
 On your **laptop**:
 
@@ -463,7 +463,7 @@ git tag -d v0.0.1-signing-test && git push origin :v0.0.1-signing-test
 
 ## 10. A read-only deploy key per app
 
-The pull-based agent clones over SSH with a key scoped to **one** repository, so
+The deploy agent clones over SSH with a key scoped to **one** repository, so
 a compromised Pi cannot write to your GitHub account.
 
 On the **Pi**, per app:

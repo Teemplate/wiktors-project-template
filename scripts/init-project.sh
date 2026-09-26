@@ -353,7 +353,7 @@ if [ "$TARGET" = pages ]; then cat <<MSG
 MSG
 else cat <<MSG
   4. SETUP.md steps 6+              # .env on the Pi, DNS, Caddy block, deploy
-  5. Choose ONE deploy model: deploy/ (recommended) or .github/workflows/deploy.yml
+  5. Install the deploy agent on the Pi (SETUP.md § 8), then ./scripts/deploy.sh prod
 MSG
 fi
 cat <<MSG

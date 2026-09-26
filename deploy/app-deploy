@@ -1,22 +1,29 @@
 #!/usr/bin/env bash
 #
-# app-deploy — pull-based deploy agent.  (rename it to <app>-deploy)
+# app-deploy — the deploy agent.  (rename it to <app>-deploy)
 #
-# Runs ON THE PI as a systemd *user* timer. Nothing on the internet can start a
-# deploy: this polls GitHub outbound with a read-only deploy key scoped to one
-# repository. No credential exists anywhere -- not in GitHub, not in Cloudflare
-# -- that can reach the Pi or trigger this script. That is the whole reason to
-# prefer it over a self-hosted runner or an SSH-based deploy.
+# Lives ON THE PI and runs ON DEMAND: the session that ships the work runs
+# ./scripts/deploy.sh, which calls this over SSH. There is no timer and nothing
+# polls GitHub -- a merge or a release reaches the Pi only when the session
+# that made it deploys it, and sees the result.
+#
+# What it still guarantees, whoever calls it: it fetches with a read-only
+# deploy key scoped to one repository, and it decides WHAT to deploy itself --
+# origin/develop for staging, the newest SIGNED v* tag on origin/main for prod.
+# So a caller can choose when, never what: not a worktree, not a dirty tree,
+# not an unpushed or unsigned commit. GitHub holds no credential that reaches
+# the Pi; only SSH access to the Pi can start a deploy.
 #
 #   app-deploy staging [--force]
 #   app-deploy prod    [--force]
 #
-# Exit codes: 0 nothing to do or deployed cleanly, 1 deploy failed (and was
-# rolled back), 2 misconfiguration.
+# Exit codes: 0 deployed cleanly or already current, 1 deploy failed (and was
+# rolled back), 2 misconfiguration, 3 another deploy is running.
 #
 # The canonical copy lives in the repo at deploy/app-deploy. The Pi runs an
-# INSTALLED copy at ~/.local/bin (see deploy/install-agent.sh), so a merge
-# cannot change the agent that is about to deploy it.
+# INSTALLED copy at ~/.local/bin (see deploy/install-agent.sh), because this
+# script `git reset --hard`s the checkout it deploys from -- run from there, it
+# would rewrite itself mid-run.
 
 set -euo pipefail
 
@@ -98,8 +105,8 @@ mkdir -p "$STATE_DIR" "$BACKUP_DIR"
 
 log() { printf '%s  %s\n' "$(date -Is)" "$*" | tee -a "$LOG" >&2; }
 
-# Only fires on something worth waking a human for. Quiet runs stay quiet: this
-# executes every 60s and almost always has nothing to say.
+# Push alerts are for failures and finished deploys. The caller also sees every
+# log line on stderr, so it never has to read the log to know what happened.
 notify() {
   local level="$1" msg="$2"
   log "[$level] $msg"
@@ -129,7 +136,8 @@ cd "$SRC"
 # One deploy at a time, and never two environments building at once on a 4-core
 # Pi that is also serving the site.
 exec 9>"$LOCK"
-flock -n 9 || { echo "another deploy holds the lock; skipping this tick" >&2; exit 0; }
+# Busy is not success: a caller told "0" would report a deploy that never ran.
+flock -n 9 || { echo "another deploy holds the lock; nothing was deployed" >&2; exit 3; }
 
 # Only the two branches this agent reads (origin/main for prod's tag, origin/
 # develop for staging) — never feature/* or experimental/* (research branches
@@ -143,7 +151,7 @@ git fetch --quiet --prune --tags origin \
 
 if [ "$ENV_NAME" = "prod" ]; then
   TARGET_TAG=$(git tag --list 'v*' --sort=-v:refname --merged origin/main | head -1)
-  [ -n "$TARGET_TAG" ] || { echo "no v* tag on origin/main yet" >&2; exit 0; }
+  [ -n "$TARGET_TAG" ] || { echo "no v* tag on origin/main yet — release first" >&2; exit 2; }
   if [ "$REQUIRE_SIGNED_TAG" = "1" ]; then
     git verify-tag "$TARGET_TAG" >/dev/null 2>&1 \
       || die "refusing to deploy $TARGET_TAG: signature missing or not from an allowed signer"
@@ -158,7 +166,8 @@ fi
 DEPLOYED_SHA=$(cat "$DEPLOYED_FILE" 2>/dev/null || echo "none")
 
 if [ "$TARGET_SHA" = "$DEPLOYED_SHA" ] && [ "$FORCE" != "--force" ]; then
-  exit 0                                   # the common case; say nothing
+  echo "$ENV_NAME is already on $TARGET_DESC; nothing to deploy (--force redeploys it)" >&2
+  exit 0
 fi
 
 log "deploying $TARGET_DESC (was ${DEPLOYED_SHA:0:8})"

@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 #
-# install-agent.sh — install the pull-based deploy agent ON THE PI.
+# install-agent.sh — install the deploy agent ON THE PI.
 #
 #   ssh pi-remote
-#   cd /mnt/ssd/apps/<app>/src && ./deploy/install-agent.sh staging
 #   cd /mnt/ssd/apps/<app>/src && ./deploy/install-agent.sh prod
+#   cd /mnt/ssd/apps/<app>-staging/src && ./deploy/install-agent.sh staging
 #
 # Run this ON THE PI, not from the dev machine. It copies the agent to
-# ~/.local/bin -- deliberately NOT symlinking it into the checkout, so that
-# merging a branch cannot change the agent that is about to deploy it.
+# ~/.local/bin/<app>-deploy -- deliberately NOT symlinking it into the checkout,
+# because the agent `git reset --hard`s that checkout and would rewrite itself
+# mid-run. Re-run it whenever deploy/app-deploy changes (or a block is added
+# or removed), so the installed copy learns the new version.
+#
+# It installs NO timer. Deploys are started by the session that ships the work
+# (./scripts/deploy.sh on the dev machine). A Pi set up by an older version of
+# this script had a systemd timer polling GitHub every 60s; this removes it.
 
 set -euo pipefail
 
@@ -32,35 +38,31 @@ fi
 PROJECT="$APP"; [ "$ENV_NAME" = staging ] && PROJECT="${APP}-staging"
 BASE="/mnt/ssd/apps/${PROJECT}"
 
-mkdir -p ~/.local/bin ~/.config/systemd/user "${BASE}"/{env,state,backups}
-
+mkdir -p ~/.local/bin "${BASE}"/{env,state,backups}
 install -m 0755 "$REPO/deploy/app-deploy" ~/.local/bin/"${APP}-deploy"
-# The unit template is per-app, so two apps on one Pi do not collide.
-sed "s|%h/.local/bin/app-deploy|%h/.local/bin/${APP}-deploy|; s|^Description=Deploy agent|Description=${APP} deploy agent|" \
-  "$REPO/deploy/app-deploy@.service" > ~/.config/systemd/user/"${APP}-deploy@.service"
-sed "s|Unit=app-deploy@|Unit=${APP}-deploy@|; s|^Description=Poll GitHub for deploys|Description=Poll GitHub for ${APP} deploys|" \
-  "$REPO/deploy/app-deploy@.timer" > ~/.config/systemd/user/"${APP}-deploy@.timer"
+
+# Retire the polling timer from the old pull-based model, if this Pi has one.
+UNIT_DIR=~/.config/systemd/user
+if [ -e "$UNIT_DIR/${APP}-deploy@.timer" ] || [ -e "$UNIT_DIR/${APP}-deploy@.service" ]; then
+  for env in staging prod; do
+    systemctl --user disable --now "${APP}-deploy@${env}.timer" 2>/dev/null || true
+  done
+  rm -f "$UNIT_DIR/${APP}-deploy@.timer" "$UNIT_DIR/${APP}-deploy@.service"
+  systemctl --user daemon-reload
+  echo "Removed the old ${APP}-deploy polling timer: deploys now start from scripts/deploy.sh."
+fi
 
 if [ ! -r "${BASE}/env/app.env" ]; then
   echo "!! ${BASE}/env/app.env does not exist yet."
-  echo "   Put the real .env there (mode 600) before enabling the timer;"
-  echo "   the agent refuses to run without it."
+  echo "   Put the real .env there (mode 600); the agent refuses to run without it."
 fi
-
-systemctl --user daemon-reload
-systemctl --user enable --now "${APP}-deploy@${ENV_NAME}.timer"
-
-# Without lingering, the user manager stops at logout and the timer dies with
-# it -- the deploy then silently never runs again until the next login.
-loginctl enable-linger "$USER" 2>/dev/null || \
-  echo "note: could not enable-linger; run 'sudo loginctl enable-linger $USER'"
 
 cat <<MSG
 
-Installed ${APP}-deploy for ${ENV_NAME}.
+Installed ~/.local/bin/${APP}-deploy (${ENV_NAME}).
 
-  status:  systemctl --user status ${APP}-deploy@${ENV_NAME}.timer
-  run now: systemctl --user start  ${APP}-deploy@${ENV_NAME}.service
+  deploy:  ./scripts/deploy.sh ${ENV_NAME}          (from the dev machine)
+  on Pi:   ~/.local/bin/${APP}-deploy ${ENV_NAME} [--force]
   logs:    tail -f ${BASE}/state/deploy.log
 
 Remaining setup on this machine:
