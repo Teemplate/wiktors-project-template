@@ -170,8 +170,8 @@ prefix_rule(
 
 # --- releasing ---------------------------------------------------------------
 # Be clear-eyed about what this grants: it allows every `git push origin main`
-# the script makes, and on a project wired for pull-based deploy it is therefore
-# a standing production-deploy grant. That is the intent — the script's own
+# the script makes, and the script then deploys production itself -- it is a
+# standing production-deploy grant. That is the intent — the script's own
 # preconditions are what stands between it and the live server. A session must
 # pass `--yes`, because the retype-the-version prompt reads stdin and
 # `codex exec` has none.
@@ -182,6 +182,11 @@ prefix_rule(
 )
 
 # --- checks and deploys ------------------------------------------------------
+# The deploy: runs the Pi's installed agent over SSH; release.sh calls it for
+# production. The agent chooses what to deploy (origin/develop, or the newest
+# signed tag on main), so this grants when, not what.
+prefix_rule(pattern = ["./scripts/deploy.sh"], decision = "allow")
+
 # Allowing e2e here is necessary but NOT sufficient: it drives the docker socket
 # and binds ports 5273/8273, so it also needs `--sandbox danger-full-access`.
 prefix_rule(pattern = ["./scripts/e2e.sh"], decision = "allow")
@@ -191,9 +196,8 @@ prefix_rule(pattern = ["gh", ["run", "workflow"]], decision = "allow")
 prefix_rule(pattern = ["ssh", ["pi-deploy", "pi-remote"]], decision = "allow")
 
 # REVIEW PER PROJECT — the one rule to check, alongside its twin in
-# `.claude/settings.json`. This is the manual production deploy from AGENTS.md
-# § Deployment; delete it on a project that deploys only through `deploy/` or
-# the self-hosted runner. Deliberately not spelled with the placeholder word
+# `.claude/settings.json`. This is the manual first deploy from AGENTS.md
+# § Deployment, before the agent is installed on the Pi; delete it once it is. Deliberately not spelled with the placeholder word
 # that `init-project.sh` substitutes — it would rewrite this sentence into the
 # app's name and the instruction would be lost.
 prefix_rule(

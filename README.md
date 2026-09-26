@@ -43,13 +43,12 @@ what it does, and for steps 6 onward (the Pi, DNS, Caddy) which stay manual.
 | `backend/app/worker.py` | The `worker` block: a loop with no port, healthy while its heartbeat is fresh |
 | `backend/app/seed.py` | **The keystone.** An empty database is not a runnable app |
 | `backend/migrations/` | Alembic. The schema is owned by migrations, never `create_all()` |
-| `deploy/` | Pull-based **signed-tag** deploy agent: backs up, health-gates, rolls back and *verifies* the rollback |
+| `deploy/` + `scripts/deploy.sh` | The deploy agent, run on the Pi on demand by `scripts/deploy.sh` (and by `release.sh` for production): **signed tags only**, backs up, health-gates, rolls back and *verifies* the rollback. Nothing polls |
 | `frontend/` | Vite + React, multi-stage Dockerfile, vitest unit tests, Playwright e2e. Features in `src/features/` are discovered, so one that needs the api leaves with it |
 | `frontend/nginx/` | SPA fallback, and — with the api block — **the `/api` proxy**: without it `/api/*` returns `index.html` and the frontend can never reach its backend |
 | `*/.dockerignore` | **Both present deliberately** — a missing one shipped a 1.1 GB context over SSH and overwrote an arm64 install with x86-64 binaries, twice |
 | `.github/workflows/ci.yml` | Gated on the blocks present: tests, typecheck, build, one-alembic-head, migrations up/down, destructive-migration guard, images, gitleaks, agent instructions — and, in the template, a project cut per block combination |
 | `.github/workflows/e2e.yml` | The full stack: weekly, on demand, or on a `run-e2e` label |
-| `.github/workflows/deploy.yml` | The *alternative* deploy model (self-hosted runner). Pick this **or** `deploy/`, not both |
 | `.github/workflows/pages.yml` | The `pages` target: build and publish `frontend/` on every push to `main` |
 | `scripts/check_preset.py` | Template only: init a project per block combination and check it (`--unit`, `--e2e`) |
 | `scripts/init-project.sh` | Turns a copy of this template into a real project: placeholders, `--blocks`/`--target`, git history, GitHub repo |

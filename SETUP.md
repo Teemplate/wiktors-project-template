@@ -66,7 +66,6 @@ Replace the name everywhere:
 grep -rl 'project-template\|CHANGEME' . --exclude-dir=node_modules --exclude-dir=.git
 # then edit: .env.example, README.md, AGENTS.md, CLAUDE.md, frontend/package.json,
 #            deploy/app-deploy (APP, DOMAIN, STAGING_DOMAIN, DATA_ROUTE),
-#            .github/workflows/deploy.yml (runs-on label + APP_NAME),
 #            .codex/rules/shipping.rules and .claude/settings.json (deploy command)
 # AGENTS.md and CLAUDE.md must stay byte-identical -- edit one, cp over the other.
 ```
@@ -211,7 +210,7 @@ In order — the order matters:
    }
    ```
    then reload Caddy. The `http://` is deliberate — see DEPLOYMENT.md.
-4. **Deploy:**
+4. **Deploy** — this first one by hand; from step 8 on, `./scripts/deploy.sh`:
    ```bash
    docker --context pi-deploy compose -f compose.deploy.yml -p <app> up -d --build
    ```
@@ -233,37 +232,31 @@ nobody can reconstruct. Fill in the Deployment section of this project's
 ```markdown
 Deployed <date>. Live at https://<app>.example.com.
 Compose project `<app>`; data at `/mnt/ssd/apps/<app>/`.
-Deploy model: pull-based agent (deploy/) — production needs a **signed** `v*` tag.
-Manual redeploy: docker --context pi-remote compose -f compose.deploy.yml -p <app> up -d --build
+Deploy: ./scripts/deploy.sh prod (release.sh runs it) — production needs a **signed** `v*` tag.
+Staging: <none | ./scripts/deploy.sh staging after each push to develop>
 Status codes that are correctly not 200: <none yet>
 ```
 
 That block is the first thing anyone should read before touching production.
 
-## 8. Automate the deploy — pick ONE
+## 8. Install the deploy agent
 
-Both are shipped. Running both would have them fight over the same containers,
-so choose and delete the other.
+After the first deploy, nobody types a compose command again. `deploy/app-deploy`
+is installed on the Pi, and **the session that ships the work runs it** through
+`./scripts/deploy.sh` — `release.sh` does so for production. Production only
+ever gets a **signed** `v*` tag merged into `main`, and the agent backs up,
+health-gates and rolls itself back, which removes the whole class of "deployed
+from a worktree / wrong `-p` / uncommitted code" mistakes. Nothing polls GitHub
+and nothing runs on a timer: an unshipped change stays unshipped, visibly.
 
-**A. Pull-based signed-tag agent (recommended).** `deploy/app-deploy` +
-`deploy/install-agent.sh`. A systemd user timer on the Pi polls GitHub every
-60s; production only deploys a **signed** `v*` tag merged into `main`, and the
-agent backs up, health-gates and rolls itself back. Nothing on the internet can
-trigger it, and a human never runs a deploy command — which removes the whole
-class of "deployed from a worktree / wrong `-p` / uncommitted code" mistakes.
-Set it up per DEPLOYMENT.md, then `rm .github/workflows/deploy.yml`.
-
-**B. Self-hosted runner.** `.github/workflows/deploy.yml` on a Pi-hosted GitHub
-Actions runner, health-gated on `/api/health`. Simpler to reason about; needs a
-runner registered and a GitHub-side credential. If you choose this, `rm -rf deploy/`.
-
-Until either is set up, the workflow simply never runs and step 6's manual
-command is the deploy.
+Set it up per DEPLOYMENT.md § The deploy agent, then prove it once:
+`./scripts/deploy.sh prod`.
 
 ## 9. Optional extras, when the app earns them
 
 - **Staging** (`compose.deploy.yml` with `STACK=<app>-staging`, via
-  `./deploy/install-agent.sh staging`): a second stack on `develop`. Worth it when
+  `./deploy/install-agent.sh staging`): a second stack on `develop`, deployed by
+  `./scripts/deploy.sh staging` after each push to `develop`. Worth it when
   a bad deploy would be destructive or hard to notice; it costs memory, disk and
   build time on a 4-core Pi, so it is not the default.
 - **Backups** ([docs/BACKUPS.md](./docs/BACKUPS.md)): the deploy agent already
@@ -283,7 +276,7 @@ command is the deploy.
 - [ ] DNS record created **and resolving**
 - [ ] Caddy block added and Caddy reloaded
 - [ ] Deployed; an `/api/*` route verified, not just a page
-- [ ] **One** deploy model chosen; the other deleted
+- [ ] Deploy agent installed on the Pi; `./scripts/deploy.sh prod` succeeded once
 - [ ] Deployment facts written into this project's `AGENTS.md`, copied to `CLAUDE.md`
 - [ ] Deploy command reviewed in `.claude/settings.json` **and** `.codex/rules/shipping.rules`
 - [ ] Using Codex? The checkout is marked `trust_level = "trusted"` in `~/.codex/config.toml`

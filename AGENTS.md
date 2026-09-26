@@ -31,9 +31,9 @@ back to the human as questions.
 | `git push origin feature/<name>` | yes — a branch that exists only on this laptop is not backed up |
 | commit on and `git push origin experimental/<name>` | yes — research branches; they **never merge** (`docs/DEVELOPING.md` § 2) |
 | merge `--no-ff` into `develop`, `git push origin develop` | yes |
-| **deploy to staging** | yes — automatic *if you installed `app-deploy staging` (the `deploy/` agent)*: `app-deploy staging` tracks `origin/develop` and needs **no tag**, so every push to `develop` lands on staging within ~60s |
+| **deploy to staging** | yes — **you do it**: after pushing `develop`, `./scripts/deploy.sh staging` (if the project has a staging stack). Nothing polls; an undeployed merge never reaches staging |
 | cut `release/vX.Y.Z` → `main` + **signed** tag → merge back to `develop`, push all three | yes — via `./scripts/release.sh vX.Y.Z --yes` |
-| deploy that release to production | yes — **whichever of the two paths this project adopted**: the pull-based `app-deploy prod` (newest **signed** `v*` tag reachable from `origin/main`), or the self-hosted runner in `.github/workflows/deploy.yml`, or the manual compose command in § Deployment if neither is set up yet |
+| deploy that release to production | yes — `release.sh` does it: it ends with `./scripts/deploy.sh prod` (the Pi's agent deploys the newest **signed** `v*` tag on `origin/main`) and exits non-zero if the deploy failed |
 
 **Finishing work means releasing it.** There is no "small change, skip the
 release" path — that is how `main` drifts behind `develop` and the next release
@@ -379,9 +379,11 @@ Push to `main` → `.github/workflows/pages.yml` builds and publishes `frontend/
 to GitHub Pages; `./scripts/release.sh` is the deploy. Verify the page itself.
 <!-- /block -->
 <!-- block:pi-compose -->
-Push to `main` → the Pi's self-hosted runner rebuilds and restarts, **gated on
-`/api/health`**. If that runner is not set up yet, deploy manually from the
-primary checkout:
+**The session that ships the work deploys it.** `./scripts/deploy.sh
+staging|prod` runs `deploy/app-deploy` on the Pi over SSH: it builds what is on
+`origin/develop` / the newest signed tag, backs up, health-gates and rolls back.
+Nothing on the Pi polls GitHub. Before the agent is installed, deploy by hand
+from the primary checkout:
 
 ```bash
 docker --context pi-deploy compose -f compose.deploy.yml -p CHANGEME up -d --build
@@ -424,12 +426,9 @@ refuses on a dirty tree, on an existing tag, when `develop` has nothing to ship,
 and — the one worth having — when `main` holds commits `develop` lacks, which
 means a hotfix was never merged back and a human has to choose what to do.
 
-⚠️ **It does not claim to have deployed.** `deploy.yml` only runs when the
-repository variable `SELF_HOSTED_DEPLOY` is `true` *and* a self-hosted runner
-exists; until you opt in, a push to `main` is just a push and the deploy is
-still the manual compose command above. The script reads that variable through
-`gh` and tells you which case you are in — and says so plainly when it cannot
-read it, rather than guessing.
+⚠️ **It deploys, and reports the truth.** After pushing it runs
+`./scripts/deploy.sh prod` and exits with the agent's result; a failed deploy
+leaves the release pushed but not live, and says so. `--no-deploy` skips it.
 
 ⚠️ **A session runs this itself** — see § Shipping at the top of this file.
 

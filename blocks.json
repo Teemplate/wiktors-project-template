@@ -90,7 +90,7 @@
     ]},
     {"when": "pi-compose", "paths": [
       "deploy",
-      ".github/workflows/deploy.yml"
+      "scripts/deploy.sh"
     ]},
     {"when": "pages", "paths": [".github/workflows/pages.yml"]}
   ],

@@ -5,6 +5,9 @@
 #
 # PRODUCTION and STAGING — Raspberry Pi 5, behind the shared Caddy + cloudflared.
 #
+#   ./scripts/deploy.sh prod|staging   (runs deploy/app-deploy on the Pi)
+#
+# By hand, for a first deploy before the agent is installed:
 #   docker --context pi-deploy compose -f compose.deploy.yml -p <app> up -d --build
 #   (swap pi-deploy -> pi-remote when off the home LAN)
 #
