@@ -55,9 +55,10 @@ period takes **60–90s** to negotiate SSH; that is normal, not a hang.
 For a docker context over the tunnel:
 `docker context create pi-remote --docker host=ssh://pi-remote`
 
-## Manual deploy
+## Manual deploy — the first one only
 
-From the **primary checkout**, on `main`, never from a worktree:
+Before the deploy agent is installed (§ The deploy agent), and only then. From
+the **primary checkout**, on `main`, never from a worktree:
 
 ```bash
 docker --context pi-deploy compose -f compose.deploy.yml -p <app> up -d --build
@@ -112,51 +113,43 @@ For a database-backed app, take a pre-deploy dump whenever a migration will run:
 docker --context pi-remote exec <app>-db pg_dump -U <user> <db> > predeploy-$(date +%Y%m%d-%H%M%S).dump
 ```
 
-## Automating it
+## The deploy agent — how every deploy happens
 
 The manual command depends on a human remembering `-p`, the right context, the
-right branch and the primary checkout. Two better options, both proven here:
+right branch and the primary checkout. So after the first deploy, nobody runs
+it: **the session that ships the work runs `./scripts/deploy.sh`**, which runs
+the project's deploy agent on the Pi over SSH.
 
-**Pick one of the two, not both** — they would fight over the same containers.
-The pull-based agent below is the recommended default; delete
-`.github/workflows/deploy.yml` if you use it, or delete `deploy/` if you use the
-runner.
+```bash
+./scripts/deploy.sh staging    # after merging to develop and pushing it
+./scripts/release.sh v1.2.0    # tags, pushes, then runs ./scripts/deploy.sh prod
+```
 
-### Self-hosted runner (what `.github/workflows/deploy.yml` expects)
+`deploy/app-deploy` is that agent, installed on the Pi as
+`~/.local/bin/<app>-deploy`. The caller chooses **when**; the agent chooses
+**what**: staging builds `origin/develop`, and **production builds the newest
+`v*` tag merged into `origin/main`, only if `git verify-tag` passes** (proven:
+an unsigned release was rejected and production stayed on the previous tag).
+It fetches with a read-only deploy key and builds from its own checkout on the
+Pi, so it cannot ship a worktree, a dirty tree or an unpushed commit. `deploy.sh`
+exits with the agent's code — 0 live and healthy (or already current), 1 failed
+and rolled back, 2 not set up, 3 another deploy running — so the session sees the
+real result instead of assuming one.
 
-Install a GitHub Actions runner **on the Pi**, labelled with the app name. The
-router has no inbound ports, so nothing can SSH in; the runner long-polls
-GitHub outbound and pulls the job. The image then builds natively on arm64 with
-no context shipped over the network, and the workflow **gates on `/api/health`**
-so a container that starts and dies is not reported as a success. Secrets stay
-on the Pi — the workflow symlinks `/mnt/ssd/apps/<app>/.env` into the checkout
-rather than using GitHub secrets.
-
-The same runner can also run CI, which then costs no Actions minutes
-([DEVELOPING.md § Actions minutes](DEVELOPING.md#actions-minutes)). Register it
-as a systemd **user** unit with linger enabled; the Pi has no passwordless sudo,
-so the runner's `svc.sh install` cannot run over SSH.
-
-### Pull-based, signed-tag deploys — **shipped in this template, and recommended**
-
-`deploy/app-deploy` is a complete agent; `deploy/install-agent.sh` installs it.
-A systemd user timer on the Pi polls GitHub every 60s. Staging tracks
-`origin/develop`; **production deploys the newest `v*` tag merged into
-`origin/main`, and only if `git verify-tag` passes.** Nothing is ever
-`docker compose`d by hand, and an unsigned tag is refused (proven: an unsigned
-release was rejected and production stayed on the previous tag).
-
-**Why this beats the runner.** Nothing on the internet can start a deploy —
-there is no inbound path and no credential anywhere that reaches the Pi. It
-also removes the entire class of "deployed from a worktree / wrong `-p` /
-uncommitted code" mistakes, because a human never runs the deploy at all.
+**Nothing polls.** Earlier versions of this template ran the agent from a
+systemd timer every 60s. That is gone: a deploy is part of finishing the work,
+so the session that did the work does it and reads the outcome, and there is no
+background service on the Pi to keep alive. GitHub still holds no credential
+that reaches the Pi; only SSH access to the Pi can start a deploy, and GitHub
+Actions never deploys anything.
 
 Set up, on the Pi:
 
 ```bash
 # 1. Edit deploy/app-deploy: APP, DOMAIN, STAGING_DOMAIN, DATA_ROUTE.
 #    BLOCKS is written by scripts/blocks.py; re-run install-agent.sh after
-#    adding or removing a block so the installed copy learns it.
+#    adding or removing a block, or changing deploy/app-deploy, so the
+#    installed copy learns it.
 # 2. On the Pi:
 mkdir -p /mnt/ssd/apps/<app>/{env,state,backups}
 install -m 600 /dev/stdin /mnt/ssd/apps/<app>/env/app.env   # paste the real .env
@@ -164,11 +157,25 @@ git clone --single-branch --branch main <read-only deploy key URL> /mnt/ssd/apps
 git -C /mnt/ssd/apps/<app>/src config --add remote.origin.fetch \
   '+refs/heads/develop:refs/remotes/origin/develop'   # staging tracks develop
 cd /mnt/ssd/apps/<app>/src && ./deploy/install-agent.sh prod
+# 3. Back on the dev machine, from the primary checkout:
+./scripts/deploy.sh prod
 ```
+
+`install-agent.sh` installs the script only. On a Pi set up by an older
+template it also disables and deletes the old `<app>-deploy@.timer`.
+
+### Running CI on the Pi (optional)
+
+A GitHub Actions runner **on the Pi** can run CI, which then costs no Actions
+minutes ([DEVELOPING.md § Actions minutes](DEVELOPING.md#actions-minutes)). The
+router has no inbound ports; the runner long-polls GitHub outbound. Register it
+as a systemd **user** unit with linger enabled; the Pi has no passwordless sudo,
+so the runner's `svc.sh install` cannot run over SSH. It runs CI only — deploys
+stay with `scripts/deploy.sh`.
 
 **Production hosts fetch only `main`** (and `develop`, for staging). A deploy host needs `main` (prod's signed tag) and `develop` (staging) —
 nothing else. The clone above is limited to those two, and `app-deploy` fetches
-them by explicit refspec on every tick, so `feature/*` and especially
+them by explicit refspec on every run, so `feature/*` and especially
 `experimental/*` branches (research that can carry large data and never
 deploys; see `DEVELOPING.md` § 2) never land on the Pi. A host cloned the old
 way keeps stale refs until you narrow it once:
@@ -202,8 +209,8 @@ What each step of the agent is for — none of it is decoration:
 Pair it with age-encrypted nightly backups whose **private key is not on the
 Pi** — see [BACKUPS.md](./BACKUPS.md).
 
-Whichever you choose, **write it down in the project's `AGENTS.md`/`CLAUDE.md`** — which
-model is in use, the compose project name, the data path and the redeploy
+**Write it down in the project's `AGENTS.md`/`CLAUDE.md`** — the compose
+project name, the data path, whether there is a staging stack, and the deploy
 command. That block is the first thing anyone should read before touching
 production, and it is the part that cannot be reconstructed from the code.
 
@@ -225,9 +232,9 @@ Two things were being confused. It is true that **nothing in this file grants a
 permission**: project instructions override an agent's default behaviour, not
 its permission layer. But that layer is *configurable*, and the lever is one
 entry — `Bash(./scripts/release.sh:*)` in `.claude/settings.json`, or the
-matching `prefix_rule` in `.codex/rules/shipping.rules` — not an immovable
-property of the harness. Once that rule is present a session cuts and deploys
-the release; without it, it cannot, and no amount of prose here changes that
+matching `prefix_rule` in `.codex/rules/shipping.rules` (and its twin for
+`./scripts/deploy.sh`) — not an immovable property of the harness. Once those
+rules are present a session cuts and deploys the release; without it, it cannot, and no amount of prose here changes that
 either way.
 
 ## GitHub Pages

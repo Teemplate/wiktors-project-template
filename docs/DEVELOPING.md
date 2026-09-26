@@ -198,7 +198,7 @@ that follow from them:
 - **Filter checks by path.** `agent-context.yml` runs only when agent context
   or documents change.
 - **Heavy or frequent CI can run on the Pi.** A self-hosted runner
-  ([DEPLOYMENT.md](DEPLOYMENT.md#self-hosted-runner-what-githubworkflowsdeployyml-expects))
+  ([DEPLOYMENT.md](DEPLOYMENT.md#running-ci-on-the-pi-optional))
   costs no minutes. The Pi is Ubuntu on arm64: `actions/setup-node` works, but
   `actions/setup-python` has no builds for it, so install Python with `uv`
   (`astral-sh/setup-uv`, then `uv venv --python 3.12 "$RUNNER_TEMP/venv"`) and

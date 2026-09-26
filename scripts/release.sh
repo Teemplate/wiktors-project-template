@@ -5,14 +5,14 @@
 #   ./scripts/release.sh v1.2.0 --dry-run   # print every command, run none
 #   ./scripts/release.sh v1.2.0             # the whole chain, one confirmation
 #   ./scripts/release.sh v1.2.0 --yes       # no prompt (for a script calling this)
+#   ./scripts/release.sh v1.2.0 --no-deploy # tag and push, but leave production alone
 #
-# WHAT HAPPENS WHEN IT PUSHES main DEPENDS ON WHETHER YOU OPTED IN.
-# .github/workflows/deploy.yml only runs when the repository variable
-# SELF_HOSTED_DEPLOY is "true" AND a self-hosted runner exists. Until then a push
-# to main is just a push, and the deploy is still the manual compose command in
-# docs/DEPLOYMENT.md. The script tells you which case you are in at the end
-# rather than assuming — claiming "deployed" when nothing ran is the one lie a
-# release script must not tell.
+# IT DEPLOYS. On the pi-compose target, pushing main is not the end: the script
+# then runs ./scripts/deploy.sh prod, which has the Pi's deploy agent build the
+# new signed tag, health-gate it and roll back on failure -- and it exits with
+# that result. Nothing on the Pi polls GitHub, so a release that is not deployed
+# here stays undeployed; claiming "deployed" when nothing ran is the one lie a
+# release script must not tell. On the pages target the push to main publishes.
 #
 # RUN IT FROM THE PRIMARY CHECKOUT. It checks out three branches, and a worktree
 # cannot check out a branch the primary checkout already holds — but the real
@@ -30,17 +30,19 @@ set -euo pipefail
 VERSION="${1:-}"
 DRY_RUN=0
 ASSUME_YES=0
+DEPLOY=1
 for arg in "${@:2}"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --yes|-y)  ASSUME_YES=1 ;;
+    --no-deploy) DEPLOY=0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
 
 die() { echo "release: $*" >&2; exit 1; }
 
-[[ -n "$VERSION" ]] || die "usage: scripts/release.sh vX.Y.Z [--dry-run] [--yes]"
+[[ -n "$VERSION" ]] || die "usage: scripts/release.sh vX.Y.Z [--dry-run] [--yes] [--no-deploy]"
 [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must look like v1.2.0, got '$VERSION'"
 
 run() {
@@ -89,14 +91,6 @@ AHEAD=$(git rev-list --count "origin/main..origin/develop")
 # Where this project runs (blocks.json): the pages target publishes itself.
 TARGET="$(python3 -c 'import json; print(json.load(open("blocks.json"))["target"])' 2>/dev/null || echo pi-compose)"
 
-# Is the runner actually going to pick this up? Best-effort: gh may be missing or
-# unauthenticated, in which case say so rather than guess either way.
-DEPLOY_STATE="unknown"
-if command -v gh >/dev/null 2>&1; then
-  if VAL=$(gh variable list --json name,value -q '.[] | select(.name=="SELF_HOSTED_DEPLOY") | .value' 2>/dev/null); then
-    [[ "$VAL" == "true" ]] && DEPLOY_STATE="on" || DEPLOY_STATE="off"
-  fi
-fi
 
 echo
 echo "release: $VERSION"
@@ -104,16 +98,12 @@ echo "  $AHEAD commit(s) from develop will be tagged and pushed to main:"
 git log --oneline --no-decorate "origin/main..origin/develop" | sed 's/^/    /'
 echo
 if [ "$TARGET" = pages ]; then
-  DEPLOY_STATE="pages"
+  echo "  pages target — the push to main publishes the site (.github/workflows/pages.yml)."
+elif [[ $DEPLOY -eq 1 ]]; then
+  echo "  then ./scripts/deploy.sh prod — production WILL be rebuilt from the signed tag."
+else
+  echo "  --no-deploy — production stays where it is until ./scripts/deploy.sh prod."
 fi
-case "$DEPLOY_STATE" in
-  pages) echo "  pages target — the push to main publishes the site (.github/workflows/pages.yml)." ;;
-  on)  echo "  SELF_HOSTED_DEPLOY=true — the push to main WILL rebuild production." ;;
-  off) echo "  SELF_HOSTED_DEPLOY is not true — pushing main will NOT deploy."
-       echo "  You will still need the manual compose command afterwards." ;;
-  *)   echo "  Could not read SELF_HOSTED_DEPLOY (no gh, or not authenticated)."
-       echo "  If it is set, this push deploys; if not, deploy manually afterwards." ;;
-esac
 echo
 
 if [[ $DRY_RUN -eq 0 && $ASSUME_YES -eq 0 ]]; then
@@ -175,21 +165,23 @@ if [ "$TARGET" = pages ]; then
   echo "Then load the site itself — the workflow going green is not the page serving."
   exit 0
 fi
-case "$DEPLOY_STATE" in
-  on)
-    echo "The runner should be building now:"
-    echo "  gh run watch \$(gh run list --workflow=deploy.yml -L1 --json databaseId -q '.[0].databaseId')"
-    ;;
-  *)
-    echo "Now deploy it — from the PRIMARY CHECKOUT, which has .env:"
-    echo "  docker --context pi-deploy compose -f compose.deploy.yml -p CHANGEME up -d --build"
-    echo "(-p is not optional; a different project name builds a second image set"
-    echo " and then collides on container_name. If pi-deploy fails instantly you"
-    echo " are off the LAN — use pi-remote, do not conclude the Pi is down.)"
-    ;;
-esac
-echo
-echo "Then verify an /api/* route, not just a page — a page returns 200 even when"
-echo "the container cannot reach the backend at all. (No api block? Check what the"
-echo "project has: the page, or the worker's heartbeat.) Codes that are correctly"
-echo "not 200 for this app are recorded in AGENTS.md under 'Health checks'."
+if [[ $DEPLOY -eq 0 ]]; then
+  echo "Not deployed (--no-deploy). When production should move:"
+  echo "  ./scripts/deploy.sh prod"
+  exit 0
+fi
+
+# The release is pushed whatever happens next, so the trap must not treat a
+# failed deploy as a failed release and switch branches under it.
+trap - EXIT
+echo "release: deploying $VERSION to production…"
+if "$(git rev-parse --show-toplevel)/scripts/deploy.sh" prod; then
+  echo
+  echo "Then verify an /api/* route yourself, not just a page. Codes that are"
+  echo "correctly not 200 for this app are recorded in AGENTS.md under 'Health checks'."
+else
+  code=$?
+  echo "release: $VERSION is tagged and pushed but NOT live (deploy exit $code)." >&2
+  echo "  Fix the cause, then: ./scripts/deploy.sh prod" >&2
+  exit "$code"
+fi

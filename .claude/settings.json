@@ -19,9 +19,13 @@
     "develop) cannot be walked around. A session must pass --yes; the retype prompt",
     "reads stdin, which is closed non-interactively.",
     "",
+    "scripts/deploy.sh is the deploy: it runs the Pi's installed deploy agent over SSH,",
+    "and release.sh calls it for production. The agent picks what to deploy itself",
+    "(origin/develop, or the newest SIGNED tag on main), so this grants when, not what.",
+    "",
     "REVIEW PER PROJECT: the docker --context line in the allow list is the manual",
-    "production deploy. Delete it on a project that deploys only through deploy/ or",
-    "the self-hosted runner. (Written without the placeholder word on purpose:",
+    "first deploy, before the agent is installed on the Pi. Delete it once the agent",
+    "is installed. (Written without the placeholder word on purpose:",
     "init-project.sh substitutes that word, and would rewrite this sentence.)"
   ],
   "permissions": {
@@ -57,6 +61,7 @@
       "Bash(git push origin develop)",
       "Bash(git push -u origin develop)",
       "Bash(./scripts/release.sh:*)",
+      "Bash(./scripts/deploy.sh:*)",
       "Bash(./scripts/e2e.sh:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
