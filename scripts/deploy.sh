@@ -32,8 +32,8 @@ case "$FORCE" in ""|--force) ;; *) echo "unknown option: $FORCE" >&2; exit 2 ;; 
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$(grep -E '^APP="' "$REPO/deploy/app-deploy" 2>/dev/null | head -1 | cut -d'"' -f2)"
-# Spelled in two halves: init-project.sh rewrites every literal placeholder.
-[ -n "$APP" ] && [ "$APP" != "CHANGEME""-app" ] \
+# Split mid-word: init-project.sh rewrites every whole placeholder word, even half of one.
+[ -n "$APP" ] && [ "$APP" != "CHANGE""ME-app" ] \
   || { echo "deploy: APP is not set in deploy/app-deploy" >&2; exit 2; }
 
 # The agent pushes nothing, so an unpushed develop would deploy the OLD commit
