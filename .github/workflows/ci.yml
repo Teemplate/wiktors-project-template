@@ -29,6 +29,7 @@ jobs:
   # hashFiles(), which is why this is a job and not an expression.
   detect:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       web: ${{ steps.b.outputs.web }}
       api: ${{ steps.b.outputs.api }}
@@ -50,6 +51,7 @@ jobs:
     needs: detect
     if: needs.detect.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -79,6 +81,7 @@ jobs:
     needs: detect
     if: needs.detect.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -114,6 +117,7 @@ jobs:
 
   compose:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Validate every compose file
@@ -137,6 +141,7 @@ jobs:
     needs: detect
     if: needs.detect.outputs.postgres == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -197,6 +202,7 @@ jobs:
     needs: detect
     if: github.event_name == 'pull_request' && needs.detect.outputs.postgres == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
@@ -218,6 +224,7 @@ jobs:
     name: images build
     needs: detect
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       # Built on x86 here purely to prove the Dockerfiles are valid. The real
@@ -237,6 +244,7 @@ jobs:
     needs: detect
     if: needs.detect.outputs.template == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -257,6 +265,7 @@ jobs:
   secrets:
     name: gitleaks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       # Scans the working tree rather than history: the point is to stop a key
@@ -324,6 +333,7 @@ jobs:
   agents:
     name: agent instructions
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
