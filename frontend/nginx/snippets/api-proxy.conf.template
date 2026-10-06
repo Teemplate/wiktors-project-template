@@ -9,8 +9,20 @@
 # BACKEND_HOST is substituted at container start (see the entrypoint in the
 # Dockerfile's prod stage) so that the compose project name, and therefore the
 # backend's container name, is not baked into the image.
+#
+# The backend is looked up PER REQUEST, not once at start-up. A literal host in
+# `proxy_pass` is resolved when nginx loads its config and the IP is kept for
+# the life of the process -- so a deploy that recreates the backend (new
+# container, new IP) and leaves this container running sends every /api
+# request to the old address: 502 until someone restarts the frontend. Putting
+# the host in a variable makes nginx ask Docker's embedded DNS (127.0.0.11)
+# instead, and also lets nginx start while the backend is down.
 location /api/ {
-  proxy_pass http://${BACKEND_HOST}:8000;
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  set $backend_upstream http://${BACKEND_HOST}:8000;
+  # No URI part, so the original request URI is passed through unchanged --
+  # the same as the literal form did.
+  proxy_pass $backend_upstream;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
