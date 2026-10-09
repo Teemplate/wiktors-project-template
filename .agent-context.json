@@ -7,6 +7,9 @@
     ".claude/settings.json",
     ".codex/config.toml",
     ".codex/rules/shipping.rules",
+    ".devin/config.json",
+    ".devin/hooks.v1.json",
+    "docs/PROJECT.md",
     "scripts/hooks/session-start.sh"
   ],
   "optional_private_paths": [

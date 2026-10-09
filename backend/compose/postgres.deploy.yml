@@ -37,6 +37,11 @@ services:
       db:
         condition: service_healthy
     restart: "no"
+    # One-shot: it exits once migrations are applied, so it has no health to
+    # report. Explicitly off, because the image's api HEALTHCHECK would otherwise
+    # run against a container that is not serving.
+    healthcheck:
+      disable: true
     networks: [internal]
 
 networks:

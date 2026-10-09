@@ -1,0 +1,129 @@
+{
+  // Project-scoped Devin CLI configuration. These grants encode the shipping
+  // policy written out in AGENTS.md § Shipping; Claude Code's copy is
+  // .claude/settings.json and Codex's copy is .codex/rules/shipping.rules.
+  // Change one, change the others.
+  //
+  // Checked in on purpose: these grants ARE the policy and should travel with
+  // the repo, not live in one machine's ~/.config/devin/config.json.
+  //
+  // LIMIT, not papered over: Exec rules are prefix matches, so a deny cannot
+  // catch a flag placed at the END of a command. Forbidding force-push is prose
+  // in AGENTS.md; this file cannot enforce it.
+  //
+  // scripts/release.sh is the only route to main: a direct 'git push origin main'
+  // is DENIED so the script's preconditions (clean tree, unused tag, main not
+  // ahead of develop) cannot be walked around. A session must pass --yes; the
+  // retype prompt reads stdin, which is closed non-interactively.
+  //
+  // scripts/deploy.sh is the deploy: it runs the Pi's installed deploy agent
+  // over SSH, and release.sh calls it for production. The agent chooses what to
+  // deploy itself (origin/develop, or the newest SIGNED tag on main), so this
+  // grants when, not what.
+  //
+  // REVIEW PER PROJECT: the docker --context line in the allow list is the
+  // manual first deploy, before the agent is installed on the Pi; delete it
+  // once the agent is installed. (Written without the placeholder word on
+  // purpose: init-project.sh substitutes that word, and would rewrite this
+  // sentence.)
+  "permissions": {
+    "allow": [
+      // --- reading the repo --------------------------------------------------
+      "Exec(git status)",
+      "Exec(git diff)",
+      "Exec(git log)",
+      "Exec(git show)",
+      "Exec(git branch)",
+      "Exec(git remote)",
+      "Exec(git rev-parse)",
+      "Exec(git rev-list)",
+      "Exec(git describe)",
+      "Exec(git verify-tag)",
+      "Exec(git fetch)",
+      "Exec(git worktree)",
+      "Exec(git check-ignore)",
+
+      // --- local work --------------------------------------------------------
+      "Exec(git add)",
+      "Exec(git commit)",
+      "Exec(git switch)",
+      "Exec(git checkout)",
+      "Exec(git merge)",
+      "Exec(git merge --no-ff)",
+      "Exec(git tag)",
+
+      // --- pushing -------------------------------------------------------------
+      // A branch that exists only on this laptop is not backed up, so pushing
+      // one is granted; so is develop, the integration branch. main is excluded
+      // by the deny rules below it, which are stricter and therefore win.
+      "Exec(git push origin feature)",
+      "Exec(git push -u origin feature)",
+      "Exec(git push --set-upstream origin feature)",
+      "Exec(git push origin experimental)",
+      "Exec(git push -u origin experimental)",
+      "Exec(git push --set-upstream origin experimental)",
+      "Exec(git push origin fix)",
+      "Exec(git push -u origin fix)",
+      "Exec(git push --set-upstream origin fix)",
+      "Exec(git push origin hotfix)",
+      "Exec(git push origin develop)",
+      "Exec(git push -u origin develop)",
+
+      // --- releasing -----------------------------------------------------------
+      "Exec(./scripts/release.sh)",
+
+      // --- checks and deploys --------------------------------------------------
+      "Exec(./scripts/deploy.sh)",
+      "Exec(./scripts/e2e.sh)",
+      "Exec(gh run list)",
+      "Exec(gh run view)",
+      "Exec(gh run watch)",
+      "Exec(gh workflow run)",
+      "Exec(gh workflow list)",
+      "Exec(ssh pi-deploy)",
+      "Exec(ssh pi-remote)",
+      "Exec(docker --context pi-deploy compose)",
+      "Exec(curl -s -o /dev/null -w)"
+    ],
+    "deny": [
+      // --- rewriting shared history: ask a human ------------------------------
+      "Exec(git push --force)",
+      "Exec(git push -f)",
+      "Exec(git push --force-with-lease)",
+      "Exec(git push origin --force)",
+      "Exec(git push origin -f)",
+      "Exec(git push origin +)",
+      "Exec(git reset --hard origin/main)",
+      "Exec(git reset --hard origin/develop)",
+      "Exec(git reset --hard main)",
+      "Exec(git reset --hard develop)",
+
+      // --- the one that matters ------------------------------------------------
+      // ./scripts/release.sh is the ONLY route to main, so a direct push is
+      // forbidden and the script's preconditions cannot be walked around.
+      "Exec(git push origin main)",
+      "Exec(git push origin HEAD:main)",
+      "Exec(git push origin develop:main)",
+      "Exec(git push origin +main)",
+      "Exec(git push -u origin main)",
+      "Exec(git push --set-upstream origin main)",
+      "Exec(git push -u origin HEAD:main)",
+      "Exec(git push --set-upstream origin HEAD:main)",
+      "Exec(git push -u origin develop:main)",
+      "Exec(git push --set-upstream origin develop:main)"
+    ]
+  },
+
+  // Use the project's own AGENTS.md and .devin/ configuration. The .claude/
+  // skills (feature/ideate) are Claude Code only and should not be loaded by
+  // Devin; if you port them to .devin/skills/, you can re-enable imports.
+  "read_config_from": {
+    "agents_standard": true,
+    "cursor": false,
+    "windsurf": false,
+    "claude": false,
+    "copilot": false,
+    "opencode": false,
+    "zed": false
+  }
+}

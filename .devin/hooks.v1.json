@@ -1,0 +1,14 @@
+{
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"$DEVIN_PROJECT_DIR/scripts/hooks/session-start.sh\"",
+          "statusMessage": "checking this branch is based on develop",
+          "timeout": 30
+        }
+      ]
+    }
+  ]
+}

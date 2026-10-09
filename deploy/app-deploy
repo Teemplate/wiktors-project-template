@@ -329,6 +329,32 @@ if has worker; then
     || rollback "the worker never reported a fresh heartbeat"
 fi
 
+# Every long-running container of the stack reports `healthy` -- not just the
+# ones the checks above probe. A container with no healthcheck never can, so it
+# fails the deploy here by name rather than shipping something nobody can watch
+# (scripts/check_healthchecks.py catches it at merge time; this is the backstop).
+# One-shots (`restart: "no"`, exited 0: migrate) are done, not unhealthy.
+unhealthy_containers() {
+  local c state health restart code out=""
+  for c in $(compose ps -a --format '{{.Name}}'); do
+    state=$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null)
+    health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$c" 2>/dev/null)
+    restart=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null)
+    code=$(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)
+    if [ "$restart" = "no" ] && [ "$state" = "exited" ] && [ "$code" = "0" ]; then continue; fi
+    [ "$health" = "healthy" ] || out="$out $c:$health"
+  done
+  [ -z "$out" ] || { echo "${out# }"; return 1; }
+}
+# Up to ~3 minutes: start periods run to 60s and a check needs an interval or two
+# after that.
+for _ in $(seq 1 18); do unhealthy_containers >/dev/null && break; sleep 10; done
+if bad=$(unhealthy_containers); then
+  log "health ok: every container healthy"
+else
+  rollback "containers not healthy: $bad"
+fi
+
 # Edge check. No credentials: a site behind basic_auth or Cloudflare Access
 # answers 401/302 before it ever proxies, which is exactly what proves DNS, the
 # tunnel and Caddy are alive. A dead origin gives 502 — that is what we look for.
