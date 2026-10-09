@@ -35,7 +35,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 COMPOSE_GLOBS = ("docker-compose.yml", "compose*.yml", "*/compose/*.yml", "**/compose*.yml")
-SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "local"}
+# .claude holds other branches' worktrees (.claude/worktrees/*): their compose
+# files are not this checkout's, and judging them fails a clean tree.
+SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "local", ".claude"}
 
 
 @dataclass
