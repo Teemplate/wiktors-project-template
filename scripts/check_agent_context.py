@@ -2,6 +2,11 @@
 """Validate portable agent context without loading credentials or running hooks.
 
 Requires Python 3.11+. Keep the template and estate copies in sync.
+
+Layout: AGENTS.md (Codex/Devin) and CLAUDE.md (Claude Code) are identical,
+byte-small entry points that point to docs/PROJECT.md, which holds the actual
+project rules. This script validates both the entry points and the central file.
+
 Run --check-rules locally to also check declared commands with Codex execpolicy.
 """
 
@@ -19,6 +24,7 @@ from urllib.parse import unquote, urlsplit
 
 VERSION = 1
 MAX_BYTES = 28 * 1024  # Leave room below Codex's default 32 KiB budget.
+PROJECT_RULES = "docs/PROJECT.md"
 
 
 def check(root: Path, check_rules: bool = False) -> list[str]:
@@ -40,6 +46,7 @@ def check(root: Path, check_rules: bool = False) -> list[str]:
     required = {
         "AGENTS.md", "CLAUDE.md", ".agent-context.json",
         "scripts/check_agent_context.py", ".github/workflows/agent-context.yml",
+        PROJECT_RULES,
         *manifest.get("required_files", []),
     }
     optional = set(manifest.get("optional_private_paths", []))
@@ -66,18 +73,40 @@ def check(root: Path, check_rules: bool = False) -> list[str]:
         errors.append(".agent-context.json: development_base is required")
     elif f"Development base: `{base}`." not in text:
         errors.append(f"AGENTS.md: must state Development base: `{base}`.")
+
+    # Load and validate the central project rules file.
+    project_text = ""
+    project_path = root / PROJECT_RULES
+    if project_path.is_file():
+        raw = project_path.read_bytes()
+        if not raw.strip():
+            errors.append(f"{PROJECT_RULES}: empty project rules")
+        if len(raw) > MAX_BYTES:
+            errors.append(f"{PROJECT_RULES}: {len(raw)} bytes exceeds the {MAX_BYTES}-byte budget")
+        try:
+            project_text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            errors.append(f"{PROJECT_RULES}: must be UTF-8")
+    else:
+        errors.append(f"{PROJECT_RULES}: missing project rules file")
+
+    if isinstance(base, str) and base and f"Development base: `{base}`." not in project_text:
+        errors.append(f"{PROJECT_RULES}: must state Development base: `{base}`.")
+
     if ".Codex/" in text:
         errors.append("AGENTS.md: invalid .Codex/ path; use actual agent-specific paths")
     if not manifest.get("is_template", False):
         for pattern in (r"^#\s*<App name>", r"Live at[^\n]*example\.com", r"Nothing is built yet"):
             if re.search(pattern, text, re.MULTILINE | re.IGNORECASE):
                 errors.append(f"AGENTS.md: unresolved scaffold text matching {pattern!r}")
+            if re.search(pattern, project_text, re.MULTILINE | re.IGNORECASE):
+                errors.append(f"{PROJECT_RULES}: unresolved scaffold text matching {pattern!r}")
     if "@AGENTS.md" in docs.get("CLAUDE.md", ""):
         errors.append("CLAUDE.md: do not import AGENTS.md when both are mirrored documents")
 
     # Check explicit Markdown links, not code snippets whose cwd can differ.
     # Private machine notes must be explicitly optional in the manifest.
-    for target in re.findall(r"\]\(([^)]+)\)", text):
+    for target in re.findall(r"\]\(([^)]+)\)", text + "\n" + project_text):
         target = target.strip()
         if target.startswith("<"):
             target = target[1:target.index(">")]
@@ -179,8 +208,14 @@ def main() -> int:
         for error in errors:
             print(f"FAIL: {error}", file=sys.stderr)
     else:
-        size = (args.root / "AGENTS.md").stat().st_size
-        print(f"Agent context OK: mirrored, tracked, {size}/{MAX_BYTES} bytes; references and configuration valid")
+        entry_size = (args.root / "AGENTS.md").stat().st_size
+        project_size = (args.root / PROJECT_RULES).stat().st_size
+        print(
+            f"Agent context OK: mirrored, tracked, "
+            f"entry {entry_size}/{MAX_BYTES} bytes, "
+            f"{PROJECT_RULES} {project_size}/{MAX_BYTES} bytes; "
+            f"references and configuration valid"
+        )
     return 1 if errors else 0
 
 
