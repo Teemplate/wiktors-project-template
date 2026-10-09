@@ -43,6 +43,11 @@ jobs:
         run: python3 scripts/blocks.py env --github | tee -a "$GITHUB_OUTPUT"
       - name: Blocks, files and generated compose agree
         run: python3 scripts/blocks.py check
+      - name: Every container reports its health
+        run: python3 scripts/check_healthchecks.py
+      - name: check_healthchecks.py regression cases (template only)
+        if: steps.b.outputs.template == 'true'
+        run: python3 scripts/tests/test_check_healthchecks.py
       - name: blocks.py regression cases (template only)
         if: steps.b.outputs.template == 'true'
         run: python3 scripts/tests/test_blocks.py

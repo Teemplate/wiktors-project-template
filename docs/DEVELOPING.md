@@ -142,6 +142,7 @@ cd frontend && npm run typecheck     # web — tsc --noEmit
 cd frontend && npm test              # web — vitest unit tests
 cd frontend && npm run build         # web — catches what typecheck alone does not
 python3 scripts/blocks.py check      # blocks.json, the files and the compose agree
+python3 scripts/check_healthchecks.py  # every container reports its health
 ```
 
 Changed a compose fragment (`frontend/compose/`, `backend/compose/`)? Run

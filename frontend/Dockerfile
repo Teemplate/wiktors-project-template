@@ -12,6 +12,12 @@ RUN npm ci || npm install
 FROM deps AS dev
 COPY . .
 EXPOSE 5173
+# Every container in this template reports health (scripts/check_healthchecks.py
+# enforces it). The dev server has no /healthz; its index answering is the signal.
+# 127.0.0.1, not localhost: Alpine resolves localhost to ::1 first and busybox
+# wget does not fall back.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -q -O /dev/null -T 4 http://127.0.0.1:5173/ || exit 1
 CMD ["npm", "run", "dev"]
 
 # ---------- build ----------
@@ -48,4 +54,9 @@ ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
 # it to the one variable we actually template.
 ENV NGINX_ENVSUBST_FILTER=BACKEND_HOST
 EXPOSE 5173
+# Baked into the image, not the compose file, so the container is checked however
+# it is started (deploy, e2e, a bare `docker run`). /healthz is nginx's own answer
+# (nginx/default.conf.template); the deploy gate waits for this to say healthy.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q -O /dev/null -T 4 http://127.0.0.1:5173/healthz || exit 1
 CMD ["nginx", "-g", "daemon off;"]
