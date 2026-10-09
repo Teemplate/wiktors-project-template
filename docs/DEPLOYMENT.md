@@ -95,6 +95,23 @@ went unnoticed for days: every `/api` route 502'd while pages stayed 200.
 curl -s -o /dev/null -w '%{http_code}' https://<app>.example.com/api/health
 ```
 
+**Every container reports its own health, too.** Each one carries a Docker
+healthcheck, so `docker ps` and the Pi's status views say `healthy` or
+`unhealthy` instead of a bare "Up":
+
+| container | healthcheck | where it is defined |
+|---|---|---|
+| `frontend` (web) | nginx's own `/healthz` → `ok` | `frontend/Dockerfile` (prod stage) + `nginx/default.conf.template` |
+| `backend` (api) | `/api/health` → 200 | `backend/Dockerfile` (and `api.deploy.yml`) |
+| `worker` | the heartbeat (`app.worker --check`) | `worker.*.yml`, overriding the image's |
+| `db` (postgres) | `pg_isready` | `postgres.*.yml` |
+| `migrate` | none: a one-shot, `healthcheck: disable: true` | `postgres.*.yml` |
+
+`python3 scripts/check_healthchecks.py` fails the merge if a service has
+none, and `deploy/app-deploy` fails the deploy if any long-running container is
+not `healthy` within ~3 minutes. A new service needs a healthcheck before
+either will let it through.
+
 Record in `AGENTS.md`/`CLAUDE.md` every status code that is *correctly* not 200 — a 307 to
 `/login`, a 401 from a basic_auth gate, a 403 on a gated endpoint — so a future
 session does not read a correct response as an outage.
@@ -201,6 +218,7 @@ What each step of the agent is for — none of it is decoration:
 | health: `/api/health` **and** a data route (`api`) | health answers `ok` while every data route is broken |
 | health: the frontend's `/api` proxy (`web`+`api`) | if the SPA fallback swallows `/api/*` the site looks fine and is entirely broken |
 | health: the worker's heartbeat (`worker`) | a worker has no port; a stuck one is running but not ticking, and only the heartbeat shows it |
+| every container `healthy` | a container nobody can watch is a failure waiting to be found; one with no healthcheck fails here by name |
 | only the blocks in its own `BLOCKS=` | the installed agent decides what to check; a merge cannot quietly change that |
 | edge check accepts 200/301/302/401 | behind Access or basic_auth those *are* success; only a dead origin gives 502 |
 | rollback **verifies itself** | a rollback that silently does nothing is worse than none — it leaves broken code live under a green log line |

@@ -276,6 +276,7 @@ directly), `develop` = integration, `feature/*` off `develop`,
 
 ```bash
 python3 scripts/blocks.py check      # blocks, files and compose agree
+python3 scripts/check_healthchecks.py  # every container reports its health
 # block:api|worker|postgres
 cd backend  && pytest                # no database, no secrets needed
 # /block

@@ -20,6 +20,12 @@ COPY . .
 # `command:` in their compose fragment. This default is the api's.
 # block:api
 EXPOSE 8000
+# The api's liveness, baked into the image so dev and e2e containers report it
+# too, not only the deploy compose file. python, not curl: the slim image has no
+# curl. The worker and the one-shot migrate share this image and override it in
+# their compose fragments (a heartbeat check; `disable: true`).
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"]
 # No --reload in production.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # /block
