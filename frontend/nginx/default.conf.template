@@ -7,6 +7,16 @@ server {
   # have the file. The glob matches nothing then, which nginx accepts.
   include /etc/nginx/conf.d/snippets/*.conf;
 
+  # Liveness, for the image's HEALTHCHECK and the deploy gate. nginx answers it
+  # itself -- no file, no proxy -- so it says "this container serves" and nothing
+  # more. It is public through Caddy, which is harmless: it reveals nothing.
+  location = /healthz {
+    access_log off;
+    default_type text/plain;
+    add_header Cache-Control "no-store";
+    return 200 "ok\n";
+  }
+
   # Hashed build assets: if one is missing it must 404, NOT fall through to
   # index.html. The fallback below would otherwise serve HTML for a missing
   # .js file, and the browser reports it as an opaque MIME-type error instead
