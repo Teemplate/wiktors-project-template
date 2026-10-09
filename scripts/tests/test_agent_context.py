@@ -22,6 +22,7 @@ class AgentContextTests(unittest.TestCase):
         self.write('.agent-context.json', json.dumps(self.manifest))
         self.write('AGENTS.md', '# Fixture\n\nDevelopment base: `main`.\n')
         self.write('CLAUDE.md', (self.root / 'AGENTS.md').read_text())
+        self.write('docs/PROJECT.md', (self.root / 'AGENTS.md').read_text())
         self.write('scripts/check_agent_context.py', '# fixture\n')
         self.write('.github/workflows/agent-context.yml', '# fixture\n')
         self.stage()
@@ -38,6 +39,7 @@ class AgentContextTests(unittest.TestCase):
         content = '# Fixture\n\nDevelopment base: `main`.\n' + extra
         self.write('AGENTS.md', content)
         self.write('CLAUDE.md', content)
+        self.write('docs/PROJECT.md', content)
 
     def assert_error(self, fragment):
         self.assertTrue(any(fragment in e for e in checker.check(self.root)), checker.check(self.root))
