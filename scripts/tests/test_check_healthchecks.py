@@ -111,6 +111,19 @@ class Catches(unittest.TestCase):
 
 
 class Passes(unittest.TestCase):
+    def test_other_worktrees_are_not_judged(self):
+        with Project("""
+            services:
+              db:
+                image: postgres:16-alpine
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready"]
+        """) as root:
+            stray = root / ".claude" / "worktrees" / "other" / "compose.deploy.yml"
+            stray.parent.mkdir(parents=True)
+            stray.write_text("services:\n  cache:\n    image: redis:7\n")
+            self.assertEqual(run(root)[0], 0)
+
     def test_compose_healthcheck(self):
         with Project("""
             services:
