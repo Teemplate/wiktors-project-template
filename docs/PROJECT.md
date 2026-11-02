@@ -494,6 +494,8 @@ tests — if something appears to need a credential to develop, that is the wron
 approach. `SECRET_KEY` must be a real value in production;
 `/api/health` reports `placeholder_secret: true` if the dev default is still in
 place, and the deploy workflow raises a warning on it.
+Cloudflare API tokens: `cf-token mint`, run by the human; the files this
+project reads are listed in [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#cloudflare-api-tokens).
 
 ## Maintaining agent context
 

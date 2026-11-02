@@ -300,4 +300,48 @@ When the site later needs an API, move it onto the Pi:
 `wrangler.jsonc` binds the built directory as static assets with
 `custom_domain` routes. `npm run deploy` ships it. **Add a CI workflow with a
 Cloudflare API token** rather than deploying from a laptop — a hand-run deploy
-puts code live with nothing having checked the build first.
+puts code live with nothing having checked the build first. Make that token with
+`cf-token mint <account> workers-deploy --zone <zone>` (§ Cloudflare API tokens)
+and store it as a repository secret.
+
+## Cloudflare API tokens
+
+Every Cloudflare API token a project uses is minted by `cf-token` from a named
+preset — **never** from the dashboard's Create Token form or a
+`dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=…` template link,
+which silently drop a permission they do not recognise. The script, its presets
+and the file layout are described in the workspace's
+`~/Documents/deployed-projects/_ops/cloudflare/README.md`; `cf-token presets`
+lists what each preset grants.
+
+```bash
+cf-token presets                                      # what each preset grants
+cf-token mint <account> <preset> --zone <zone>        # → ~/.config/cloudflare/<account>/<file>-token
+cf-token mint <account> <preset> --dry-run            # what would be created; makes nothing
+cf-token check                                        # exit 1 if any token is invalid or < 30 days
+```
+
+Tokens live one directory per Cloudflare account, at
+`~/.config/cloudflare/<account>/<name>-token` (mode 600). They never go in the
+repo, `.env.example` or an agent guide.
+
+**Record which token the project reads.** One row per token, in this section of
+the project's own copy, is the whole contract — a script reads that file and
+nothing else:
+
+| token file | made by | used for |
+|---|---|---|
+| `~/.config/cloudflare/<account>/workers-token` | `cf-token mint <account> workers-deploy --zone <zone>` | `npm run deploy`, CI secret `CLOUDFLARE_API_TOKEN` |
+
+Delete the example row if the project uses no Cloudflare API token. If no preset
+fits, add one to the workspace's `presets.json` rather than hand-making a token
+with an odd permission set.
+
+**Agents do not mint or rotate.** `mint` and `rotate` create credentials, so the
+human runs them; a session that needs a token prints the exact
+`! cf-token mint …` command for them and waits. Agents may run `presets`,
+`list`, `check` and `mint … --dry-run`, none of which prints a token value, and
+never read a token file's contents or the token-creator file.
+
+**Run `cf-token check` before any deploy that needs a token.** An expired token
+fails mid-deploy, and Cloudflare's error for it rarely says "expired".
